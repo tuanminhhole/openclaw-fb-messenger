@@ -22,10 +22,10 @@ const args = process.argv.slice(2);
 const flag = (f) => args.includes(f);
 const DRY = flag("--dry");
 const SKIP_GIT = flag("--no-git");
-const SKIP_CLAWHUB = flag("--no-clawhub");
+const DO_CLAWHUB = flag("--clawhub"); // private plugin: clawhub publish is opt-in (others could download)
 const bumpArg = args.find((a) => !a.startsWith("--")) || "patch";
 
-const CLAWHUB_SPEC = "tuanminhhole/fb-messenger";
+const CLAWHUB_SPEC = "tuanminhhole/openclaw-fb-messenger";
 
 function sh(cmd, opts = {}) {
   console.log(`\x1b[36m$ ${cmd}\x1b[0m`);
@@ -78,14 +78,14 @@ if (!SKIP_GIT) {
 }
 
 // 4) clawhub publish
-if (!SKIP_CLAWHUB) {
+if (DO_CLAWHUB) {
   let hasClawhub = true;
   try { shOut("clawhub --version"); } catch { hasClawhub = false; }
   const cli = hasClawhub ? "clawhub" : "npx -y clawhub";
   sh(`${cli} package publish ${CLAWHUB_SPEC} --dry-run`);
   if (!DRY) sh(`${cli} package publish ${CLAWHUB_SPEC}`);
 } else {
-  console.log("↷ skipped clawhub");
+  console.log("↷ clawhub publish skipped (private; pass --clawhub to publish)");
 }
 
 console.log(`\n✅ Done. fb-messenger v${to}\n`);

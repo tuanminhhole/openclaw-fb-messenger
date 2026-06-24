@@ -19,7 +19,7 @@ agent (and your configured model provider, e.g. **9Router**), exactly like the o
 
 ```bash
 # From ClawHub (private, under the tuanminhhole org):
-openclaw plugins install clawhub:tuanminhhole/fb-messenger
+openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger
 ```
 
 ## Configure

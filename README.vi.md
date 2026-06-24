@@ -15,7 +15,7 @@ Plugin chỉ lo nhận/gửi tin nhắn — câu trả lời do agent OpenClaw s
 ## Cài đặt
 ```bash
 # Từ ClawHub (riêng tư, dưới org tuanminhhole):
-openclaw plugins install clawhub:tuanminhhole/fb-messenger
+openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger
 ```
 
 ## Cấu hình
