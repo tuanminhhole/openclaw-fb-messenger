@@ -1,0 +1,14 @@
+src/
+tests/
+node_modules/
+.git/
+.gitignore
+.clawhubignore
+tsconfig.json
+tsup.config.ts
+package-lock.json
+*.tgz
+*.log
+.DS_Store
+PLAN.md
+scripts/
