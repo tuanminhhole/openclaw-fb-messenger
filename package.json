@@ -35,8 +35,8 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && node --check dist/index.js",
-    "test": "tsup tests/smoke.ts --format esm --external openclaw -d tests/dist && node tests/dist/smoke.js",
-    "release": "node scripts/update.mjs",
+    "test": "tsup docs_dev/tests/smoke.ts --format esm --external openclaw -d docs_dev/tests/dist && node docs_dev/tests/dist/smoke.js",
+    "release": "node docs_dev/scripts/update.mjs",
     "prepublishOnly": "npm run build"
   },
   "openclaw": {

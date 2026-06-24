@@ -1,7 +1,8 @@
 src/
-tests/
+docs_dev/
 node_modules/
 .git/
+.github/
 .gitignore
 .clawhubignore
 tsconfig.json
@@ -10,5 +11,3 @@ package-lock.json
 *.tgz
 *.log
 .DS_Store
-PLAN.md
-scripts/
