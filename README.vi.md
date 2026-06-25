@@ -68,10 +68,13 @@ openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger
 ### 2. Biến môi trường
 
 ```bash
-FB_MESSENGER_PAGE_ACCESS_TOKEN=EAAB...      # Page token (hoặc User token — plugin tự đổi)
-FB_MESSENGER_APP_SECRET=xxxxxxxx            # App Secret (xác minh chữ ký)
+FB_MESSENGER_PAGE_ACCESS_TOKEN=EAAB...      # token bất kỳ — kể cả User token ngắn hạn lấy từ Graph API Explorer
+FB_MESSENGER_APP_ID=1234567890              # App ID của Meta — cần để tạo Page token KHÔNG hết hạn
+FB_MESSENGER_APP_SECRET=xxxxxxxx            # App Secret (xác minh chữ ký + đổi token)
 FB_MESSENGER_VERIFY_TOKEN=chuoi-tu-chon     # tuỳ bạn đặt
 ```
+
+> 🔑 **Tự động lấy token vĩnh viễn.** Lúc khởi động, plugin tự đổi token bạn dán (User token ngắn hạn → long-lived → **Page token vĩnh viễn**) rồi lưu Page token vào `.openclaw/credentials/fb-messenger/`, nên bot vẫn chạy sau khi token gốc hết hạn. Có `FB_MESSENGER_APP_ID` + `FB_MESSENGER_APP_SECRET` thì token mới thật sự vĩnh viễn.
 
 ### 3. `openclaw.json`
 

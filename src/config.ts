@@ -13,6 +13,7 @@ export interface MessengerAccountConfig {
   enabled?: boolean;
   pageId?: string;
   pageAccessToken?: string;
+  appId?: string;
   appSecret?: string;
   verifyToken?: string;
   graphApiVersion?: string;
@@ -35,6 +36,7 @@ export interface ResolvedMessengerAccount {
   enabled: boolean;
   pageId: string;
   pageAccessToken: string;
+  appId: string;
   appSecret: string;
   verifyToken: string;
   graphApiVersion: string;
@@ -84,6 +86,8 @@ export function resolveMessengerAccount(params: {
 
   const pageAccessToken =
     pick(env.FB_MESSENGER_PAGE_ACCESS_TOKEN, account.pageAccessToken, channel.pageAccessToken) ?? "";
+  const appId =
+    pick(env.FB_MESSENGER_APP_ID, account.appId, channel.appId) ?? "";
   const appSecret =
     pick(env.FB_MESSENGER_APP_SECRET, account.appSecret, channel.appSecret) ?? "";
   const verifyToken =
@@ -95,6 +99,7 @@ export function resolveMessengerAccount(params: {
     enabled: account.enabled ?? channel.enabled ?? true,
     pageId: pick(account.pageId, channel.pageId) ?? "",
     pageAccessToken,
+    appId,
     appSecret,
     verifyToken,
     graphApiVersion:

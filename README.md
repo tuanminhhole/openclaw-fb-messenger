@@ -68,10 +68,13 @@ openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger
 ### 2. Environment variables
 
 ```bash
-FB_MESSENGER_PAGE_ACCESS_TOKEN=EAAB...      # Page token (or a User token — auto-exchanged)
-FB_MESSENGER_APP_SECRET=xxxxxxxx            # App Secret (for signature verification)
+FB_MESSENGER_PAGE_ACCESS_TOKEN=EAAB...      # any token — even a short-lived User token from the Graph API Explorer
+FB_MESSENGER_APP_ID=1234567890              # Meta App ID — required to mint a never-expiring Page token
+FB_MESSENGER_APP_SECRET=xxxxxxxx            # App Secret (signature verification + token exchange)
 FB_MESSENGER_VERIFY_TOKEN=my-verify-token   # any string you choose
 ```
+
+> 🔑 **Never-expiring token, automatically.** On startup the plugin exchanges whatever you paste (short-lived User token → long-lived User token → **permanent Page token**) and caches the Page token under `.openclaw/credentials/fb-messenger/`, so the bot keeps working after the input token expires. Providing `FB_MESSENGER_APP_ID` + `FB_MESSENGER_APP_SECRET` is what makes the result permanent.
 
 ### 3. `openclaw.json`
 

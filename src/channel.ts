@@ -16,7 +16,8 @@ import {
   type MessengerAccountConfig,
   type ResolvedMessengerAccount,
 } from "./config.js";
-import { resolvePageContext, subscribePageToApp } from "./graph-api.js";
+import { resolvePermanentPageContext, subscribePageToApp, validateToken } from "./graph-api.js";
+import { loadPageCredential, savePageCredential, clearPageCredential } from "./credentials.js";
 import { registerDispatchContext } from "./registry.js";
 import type { ChannelReplyDispatchSurface } from "./types.js";
 
@@ -56,6 +57,7 @@ const messengerConfigAdapter = createHybridChannelConfigAdapter<ResolvedMessenge
     "name",
     "pageId",
     "pageAccessToken",
+    "appId",
     "appSecret",
     "verifyToken",
     "graphApiVersion",
@@ -92,6 +94,7 @@ const messengerSetupAdapter = {
       enabled: true,
       ...(input.pageId ? { pageId: input.pageId } : {}),
       ...(input.pageAccessToken ? { pageAccessToken: input.pageAccessToken } : {}),
+      ...(input.appId ? { appId: input.appId } : {}),
       ...(input.appSecret ? { appSecret: input.appSecret } : {}),
       ...(input.verifyToken ? { verifyToken: input.verifyToken } : {}),
       dmPolicy: existing.dmPolicy ?? "open",
@@ -126,25 +129,56 @@ const messengerGateway = {
 
     const channelRuntime = ctx.channelRuntime as unknown as ChannelReplyDispatchSurface;
 
-    // Normalize whatever token/pageId the user supplied: accept a User token
-    // (auto-exchange for the Page token) or a mistyped Page ID, and key the
-    // webhook router by the REAL page id.
-    const resolved = await resolvePageContext(account.pageAccessToken, {
-      configuredPageId: account.pageId,
-      graphApiVersion: account.graphApiVersion,
-    });
-    if (resolved) {
-      if (resolved.pageId && resolved.pageId !== account.pageId) {
-        ctx.log?.info?.(
-          `[fb-messenger] resolved page id ${resolved.pageId} (config had "${account.pageId || "?"}")`,
+    // Resolve the effective Page token. Prefer a previously-derived permanent
+    // token (persisted in .openclaw/credentials/fb-messenger); otherwise derive
+    // one from whatever the user supplied — a short-lived User token from the
+    // Graph API Explorer is upgraded to a long-lived one and exchanged for the
+    // Page's never-expiring token — and persist it so restarts never re-depend
+    // on the (expiring) input token.
+    let resolvedFromPersist = false;
+    const persisted = await loadPageCredential(account.accountId);
+    if (persisted?.pageAccessToken && (await validateToken(persisted.pageAccessToken, account.graphApiVersion))) {
+      account.pageAccessToken = persisted.pageAccessToken;
+      if (persisted.pageId) account.pageId = persisted.pageId;
+      resolvedFromPersist = true;
+      ctx.log?.info?.(`[fb-messenger] using saved permanent page token (page ${account.pageId || "?"})`);
+    } else if (persisted) {
+      await clearPageCredential(account.accountId);
+      ctx.log?.warn?.("[fb-messenger] saved page token invalid — re-deriving from configured token");
+    }
+
+    if (!resolvedFromPersist) {
+      const resolved = await resolvePermanentPageContext(account.pageAccessToken, {
+        appId: account.appId,
+        appSecret: account.appSecret,
+        configuredPageId: account.pageId,
+        graphApiVersion: account.graphApiVersion,
+      });
+      if (resolved) {
+        if (resolved.pageId && resolved.pageId !== account.pageId) {
+          ctx.log?.info?.(
+            `[fb-messenger] resolved page id ${resolved.pageId} (config had "${account.pageId || "?"}")`,
+          );
+          account.pageId = resolved.pageId;
+        }
+        account.pageAccessToken = resolved.pageAccessToken;
+        if (resolved.permanent) {
+          await savePageCredential(account.accountId, {
+            pageId: resolved.pageId,
+            pageAccessToken: resolved.pageAccessToken,
+            derivedAt: new Date().toISOString(),
+          });
+          ctx.log?.info?.(`[fb-messenger] derived & saved permanent page token (page ${resolved.pageId})`);
+        } else {
+          ctx.log?.warn?.(
+            "[fb-messenger] derived a Page token but it is NOT permanent — set FB_MESSENGER_APP_ID + FB_MESSENGER_APP_SECRET for a never-expiring token",
+          );
+        }
+      } else {
+        ctx.log?.warn?.(
+          "[fb-messenger] could not resolve page from token — it may be expired/invalid. Re-enter the token (with App ID + App Secret) when editing the bot.",
         );
-        account.pageId = resolved.pageId;
       }
-      account.pageAccessToken = resolved.pageAccessToken;
-    } else {
-      ctx.log?.warn?.(
-        `[fb-messenger] could not resolve page from token — check FB_MESSENGER_PAGE_ACCESS_TOKEN`,
-      );
     }
 
     // Auto-subscribe the Page to this app's webhook (idempotent) so the user

@@ -11,6 +11,7 @@
   "channelEnvVars": {
     "fb-messenger": [
       "FB_MESSENGER_PAGE_ACCESS_TOKEN",
+      "FB_MESSENGER_APP_ID",
       "FB_MESSENGER_APP_SECRET",
       "FB_MESSENGER_VERIFY_TOKEN"
     ]
@@ -37,7 +38,11 @@
           },
           "pageAccessToken": {
             "type": "string",
-            "description": "Page Access Token. Prefer env FB_MESSENGER_PAGE_ACCESS_TOKEN."
+            "description": "Page Access Token, or any User token (the plugin auto-exchanges it for a permanent Page token). Prefer env FB_MESSENGER_PAGE_ACCESS_TOKEN."
+          },
+          "appId": {
+            "type": "string",
+            "description": "Meta App ID. Needed to exchange a short-lived token into a never-expiring Page token. Prefer env FB_MESSENGER_APP_ID."
           },
           "appSecret": {
             "type": "string",
@@ -88,6 +93,7 @@
                 "enabled": { "type": "boolean" },
                 "pageId": { "type": "string" },
                 "pageAccessToken": { "type": "string" },
+                "appId": { "type": "string" },
                 "appSecret": { "type": "string" },
                 "verifyToken": { "type": "string" },
                 "graphApiVersion": { "type": "string" },

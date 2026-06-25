@@ -152,6 +152,96 @@ export async function resolvePageContext(
   return null;
 }
 
+/** Cheap liveness check: a token is valid if `/me` returns an id. */
+export async function validateToken(token: string, graphApiVersion?: string): Promise<boolean> {
+  if (!token) return false;
+  try {
+    const res = await fetch(graphUrl("/me?fields=id", graphApiVersion ?? DEFAULT_GRAPH_API_VERSION, token));
+    if (!res.ok) return false;
+    const json = (await res.json().catch(() => ({}))) as { id?: string; error?: unknown };
+    return Boolean(json.id) && !json.error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Exchange a (short-lived) User token for a long-lived one. Needs the Meta App
+ * credentials. Returns the long-lived user token, or null if it isn't a user
+ * token / credentials are missing. A Page token derived from a long-lived user
+ * token never expires — this is the key step to a permanent setup.
+ */
+export async function exchangeLongLivedUserToken(
+  token: string,
+  opts: { appId?: string; appSecret?: string; graphApiVersion?: string },
+): Promise<string | null> {
+  if (!token || !opts.appId || !opts.appSecret) return null;
+  const version = opts.graphApiVersion ?? DEFAULT_GRAPH_API_VERSION;
+  try {
+    const url =
+      `${GRAPH_HOST}/${version}/oauth/access_token?grant_type=fb_exchange_token` +
+      `&client_id=${encodeURIComponent(opts.appId)}` +
+      `&client_secret=${encodeURIComponent(opts.appSecret)}` +
+      `&fb_exchange_token=${encodeURIComponent(token)}`;
+    const res = await fetch(url);
+    const json = (await res.json().catch(() => ({}))) as { access_token?: string };
+    if (res.ok && json.access_token) return json.access_token;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * Resolve a **permanent** Page context from whatever token the user pasted
+ * (typically a short-lived User token from the Graph API Explorer):
+ *   short-lived user token --(App ID + Secret)--> long-lived user token
+ *   long-lived user token   --/me/accounts------> never-expiring Page token
+ * `permanent` is true when the Page token came from a long-lived user token (or
+ * the supplied token is already a Page token); false when it was only derivable
+ * from a short-lived user token (will expire — caller should not persist it).
+ */
+export async function resolvePermanentPageContext(
+  token: string,
+  opts: { appId?: string; appSecret?: string; configuredPageId?: string; graphApiVersion?: string },
+): Promise<{ pageId: string; pageAccessToken: string; permanent: boolean } | null> {
+  const version = opts.graphApiVersion ?? DEFAULT_GRAPH_API_VERSION;
+  // 1) Upgrade to a long-lived user token when possible.
+  const longLived = await exchangeLongLivedUserToken(token, {
+    appId: opts.appId,
+    appSecret: opts.appSecret,
+    graphApiVersion: version,
+  });
+  const userToken = longLived ?? token;
+  const permanentSource = Boolean(longLived);
+  // 2) Trade the user token for the Page's access token.
+  try {
+    const res = await fetch(graphUrl("/me/accounts?fields=id,access_token,name", version, userToken));
+    const json = (await res.json().catch(() => ({}))) as {
+      data?: Array<{ id?: string; access_token?: string }>;
+    };
+    const pages = json.data ?? [];
+    if (pages.length > 0) {
+      const match =
+        (opts.configuredPageId && pages.find((p) => p.id === opts.configuredPageId)) || pages[0];
+      if (match?.id && match.access_token) {
+        return { pageId: match.id, pageAccessToken: match.access_token, permanent: permanentSource };
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+  // 3) The supplied token is likely already a Page token — Page tokens don't expire.
+  try {
+    const meRes = await fetch(graphUrl("/me?fields=id", version, token));
+    const me = (await meRes.json().catch(() => ({}))) as { id?: string };
+    if (me.id) return { pageId: me.id, pageAccessToken: token, permanent: true };
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 /**
  * Subscribe the Page to this app's webhook fields (idempotent). Removes the
  * manual "Edit Page Subscriptions" step — the gateway does it on startup.
