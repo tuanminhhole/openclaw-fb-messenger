@@ -50,9 +50,16 @@ flowchart LR
 ## ⬇️ Cài đặt
 
 ```bash
-# Từ ClawHub (riêng tư, dưới org tuanminhhole):
+# Từ ClawHub:
 openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger
+
+# Cập nhật lên bản mới sau này (ép tải lại):
+openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger --force
 ```
+
+Gói ClawHub đã kèm sẵn `dist/` build sẵn, nên **không cần build gì cả** — cài xong, cấu hình (bên dưới), khởi động lại gateway.
+
+> 💡 Muốn cài qua giao diện? [**openclaw-setup**](https://github.com/tuanminhhole/openclaw-setup) cài & cấu hình kênh này (Page token, webhook) ngay trên dashboard.
 
 ---
 
@@ -142,13 +149,29 @@ Vào *Messenger → Settings → Webhooks*:
 
 ## 🧪 Kiểm tra
 
+Khởi động lại gateway OpenClaw. Lúc khởi động, plugin ghi log báo đã chạy và tự subscribe Page:
+
+```text
+[fb-messenger] page <pageId> subscribed to app webhook
+[fb-messenger] account default listening (page <pageId>) — webhook /webhooks/messenger
+```
+
+Sau đó nhắn tin cho Page từ một tài khoản Facebook — agent sẽ trả lời.
+
+<details>
+<summary><b>🛠️ Build từ source (chỉ dành cho người đóng góp code)</b></summary>
+
+Người dùng cuối cài từ ClawHub (đã có sẵn `dist/`). Muốn nghịch/sửa plugin ở máy:
+
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit
 npm run build       # đóng gói vào dist/
+npm test            # smoke test
 ```
 
-Sau đó khởi động gateway OpenClaw và nhắn tin cho Page từ một tài khoản Facebook.
+Phát hành (bump → build → test → git push → publish ClawHub): `npm run release patch`.
+</details>
 
 ---
 
@@ -163,3 +186,39 @@ Sau đó khởi động gateway OpenClaw và nhắn tin cho Page từ một tài
 ## 📄 Giấy phép
 
 Proprietary — © 2026 tuanminhhole. Bảo lưu mọi quyền. Xem [LICENSE](LICENSE).
+
+---
+
+## 🙌 Tác giả
+
+Làm bởi **[tuanminhhole (Kent)](https://github.com/tuanminhhole)**. Mọi issue / PR cải tiến đều được hoan nghênh — thấy hữu ích thì ⭐ repo để nhiều người biết tới nhé!
+
+---
+
+## 🦞 Hệ sinh thái OpenClaw (cùng tác giả)
+
+Các repo đi kèm để bạn dựng một trợ lý AI "tự vận hành" hoàn chỉnh:
+
+**🚀 Cài đặt & khung nền**
+- [openclaw-setup](https://github.com/tuanminhhole/openclaw-setup) — Cài & cấu hình bot AI (Telegram / Zalo / Messenger) bằng OpenClaw + 9Router + Docker — có dashboard trực quan
+- [9router](https://github.com/tuanminhhole/9router) — Nối mọi AI code tool tới 40+ nhà cung cấp & 100+ model
+- [vietbrain](https://github.com/tuanminhhole/vietbrain) — Bộ khung "Bộ Não Thứ Hai" tiếng Việt cho Obsidian (sẵn sàng AI)
+
+**🔌 Plugin (runtime)**
+- `openclaw-fb-messenger` — Kênh Facebook Messenger *(repo này)*
+- [openclaw-zalo-mod](https://github.com/tuanminhhole/openclaw-zalo-mod) — Quản lý nhóm Zalo zero-token (slash command, anti-spam, warn, memory)
+- [openclaw-browser-automation](https://github.com/tuanminhhole/openclaw-browser-automation) — Smart Search & Browser Automation qua CDP
+- [openclaw-telegram-multibot-relay](https://github.com/tuanminhhole/openclaw-telegram-multibot-relay) — Multibot Telegram relay, delegation & cron nhắc lịch native
+- [openclaw-facebook-crawler](https://github.com/tuanminhhole/openclaw-facebook-crawler) — Crawl tin đăng trong group Facebook
+- [openclaw-n8n-facebook-poster](https://github.com/tuanminhhole/openclaw-n8n-facebook-poster) — Đăng bài Facebook qua webhook n8n
+
+**🧩 Skill**
+- [openclaw-skill-learning-memory](https://github.com/tuanminhhole/openclaw-skill-learning-memory) — Bộ nhớ dài hạn tự tiến hoá (Super Memory)
+- [openclaw-skill-infographic](https://github.com/tuanminhhole/openclaw-skill-infographic) — Tạo infographic / banner / poster
+- [openclaw-skill-zalo-sticker-mention](https://github.com/tuanminhhole/openclaw-skill-zalo-sticker-mention) — Tự tag người gửi + gửi sticker trên Zalo
+
+---
+
+<div align="center">
+<sub>🦞 <b>openclaw-fb-messenger</b> · một phần của hệ sinh thái <a href="https://github.com/tuanminhhole">tuanminhhole (Kent)</a></sub>
+</div>
