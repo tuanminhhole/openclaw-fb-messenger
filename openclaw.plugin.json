@@ -3,7 +3,7 @@
   "name": "Facebook Messenger",
   "description": "OpenClaw Facebook Messenger channel plugin via webhook + Graph API.",
   "icon": "https://cdn.jsdelivr.net/gh/tuanminhhole/openclaw-fb-messenger@main/logo.svg",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "activation": {
     "onStartup": false
   },
@@ -16,6 +16,20 @@
       "FB_MESSENGER_APP_ID",
       "FB_MESSENGER_APP_SECRET",
       "FB_MESSENGER_VERIFY_TOKEN"
+    ]
+  },
+  "setup": {
+    "providers": [
+      {
+        "id": "fb-messenger",
+        "channel": "fb-messenger",
+        "envVars": [
+          "FB_MESSENGER_PAGE_ACCESS_TOKEN",
+          "FB_MESSENGER_APP_ID",
+          "FB_MESSENGER_APP_SECRET",
+          "FB_MESSENGER_VERIFY_TOKEN"
+        ]
+      }
     ]
   },
   "configSchema": {
@@ -32,8 +46,12 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string" },
-          "enabled": { "type": "boolean" },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
           "pageId": {
             "type": "string",
             "description": "Facebook Page ID this account answers for."
@@ -60,12 +78,19 @@
           },
           "dmPolicy": {
             "type": "string",
-            "enum": ["pairing", "allowlist", "open", "disabled"],
+            "enum": [
+              "pairing",
+              "allowlist",
+              "open",
+              "disabled"
+            ],
             "default": "open"
           },
           "allowFrom": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "historyLimit": {
             "type": "integer",
@@ -78,35 +103,79 @@
             "properties": {
               "tables": {
                 "type": "string",
-                "enum": ["off", "bullets", "code", "block"]
+                "enum": [
+                  "off",
+                  "bullets",
+                  "code",
+                  "block"
+                ]
               }
             }
           },
-          "messagePrefix": { "type": "string" },
-          "responsePrefix": { "type": "string" },
-          "defaultAccount": { "type": "string" },
+          "messagePrefix": {
+            "type": "string"
+          },
+          "responsePrefix": {
+            "type": "string"
+          },
+          "defaultAccount": {
+            "type": "string"
+          },
           "accounts": {
             "type": "object",
             "additionalProperties": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "name": { "type": "string" },
-                "enabled": { "type": "boolean" },
-                "pageId": { "type": "string" },
-                "pageAccessToken": { "type": "string" },
-                "appId": { "type": "string" },
-                "appSecret": { "type": "string" },
-                "verifyToken": { "type": "string" },
-                "graphApiVersion": { "type": "string" },
+                "name": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "pageId": {
+                  "type": "string"
+                },
+                "pageAccessToken": {
+                  "type": "string"
+                },
+                "appId": {
+                  "type": "string"
+                },
+                "appSecret": {
+                  "type": "string"
+                },
+                "verifyToken": {
+                  "type": "string"
+                },
+                "graphApiVersion": {
+                  "type": "string"
+                },
                 "dmPolicy": {
                   "type": "string",
-                  "enum": ["pairing", "allowlist", "open", "disabled"]
+                  "enum": [
+                    "pairing",
+                    "allowlist",
+                    "open",
+                    "disabled"
+                  ]
                 },
-                "allowFrom": { "type": "array", "items": { "type": "string" } },
-                "historyLimit": { "type": "integer", "minimum": 0 },
-                "messagePrefix": { "type": "string" },
-                "responsePrefix": { "type": "string" }
+                "allowFrom": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "historyLimit": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "messagePrefix": {
+                  "type": "string"
+                },
+                "responsePrefix": {
+                  "type": "string"
+                }
               }
             }
           }

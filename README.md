@@ -50,9 +50,16 @@ flowchart LR
 ## ⬇️ Install
 
 ```bash
-# From ClawHub (private, under the tuanminhhole org):
+# From ClawHub:
 openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger
+
+# Update to the latest version later (force re-pull):
+openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger --force
 ```
+
+The ClawHub package ships the prebuilt `dist/`, so there is **nothing to build** — install, configure (below), restart the gateway.
+
+> 💡 Prefer a guided UI? [**openclaw-setup**](https://github.com/tuanminhhole/openclaw-setup) installs and configures this channel (Page token, webhook) straight from its dashboard.
 
 ---
 
@@ -140,18 +147,6 @@ In *Messenger → Settings → Webhooks*:
 
 ---
 
-## 🧪 Verify it works
-
-```bash
-npm install
-npm run typecheck   # tsc --noEmit
-npm run build       # bundle to dist/
-```
-
-Then start your OpenClaw gateway and message the Page from a Facebook account.
-
----
-
 ## 🗺️ Scope
 
 **v1** — 1:1 (direct) text conversations, DM policy / allowlist, signature verification, auto chunking, token self-healing, auto-subscribe.
@@ -163,3 +158,39 @@ Then start your OpenClaw gateway and message the Page from a Facebook account.
 ## 📄 License
 
 Proprietary — © 2026 tuanminhhole. All rights reserved. See [LICENSE](LICENSE).
+
+---
+
+## 🙌 Author
+
+Built by **[tuanminhhole (Kent)](https://github.com/tuanminhhole)**. Issues and improvement PRs welcome — if this saved you time, a ⭐ helps others find it.
+
+---
+
+## 🦞 OpenClaw ecosystem (same author)
+
+Companion repos for building a complete, self-running AI assistant:
+
+**🚀 Setup & framework**
+- [openclaw-setup](https://github.com/tuanminhhole/openclaw-setup) — Install & configure AI bots (Telegram / Zalo / Messenger) with OpenClaw + 9Router + Docker — visual dashboard
+- [9router](https://github.com/tuanminhhole/9router) — Connect every AI code tool to 40+ providers & 100+ models
+- [vietbrain](https://github.com/tuanminhhole/vietbrain) — Vietnamese "Second Brain" framework for Obsidian (AI-ready)
+
+**🔌 Plugins (runtime)**
+- `openclaw-fb-messenger` — Facebook Messenger channel *(this repo)*
+- [openclaw-zalo-mod](https://github.com/tuanminhhole/openclaw-zalo-mod) — Zero-token Zalo group moderation (slash commands, anti-spam, warn, memory)
+- [openclaw-browser-automation](https://github.com/tuanminhhole/openclaw-browser-automation) — Smart Search & Browser Automation over CDP
+- [openclaw-telegram-multibot-relay](https://github.com/tuanminhhole/openclaw-telegram-multibot-relay) — Telegram multibot relay, delegation & native cron reminders
+- [openclaw-facebook-crawler](https://github.com/tuanminhhole/openclaw-facebook-crawler) — Facebook group listing crawler
+- [openclaw-n8n-facebook-poster](https://github.com/tuanminhhole/openclaw-n8n-facebook-poster) — Post to Facebook via an n8n webhook
+
+**🧩 Skills**
+- [openclaw-skill-learning-memory](https://github.com/tuanminhhole/openclaw-skill-learning-memory) — Self-evolving long-term memory (Super Memory)
+- [openclaw-skill-infographic](https://github.com/tuanminhhole/openclaw-skill-infographic) — Generate infographics / banners / posters
+- [openclaw-skill-zalo-sticker-mention](https://github.com/tuanminhhole/openclaw-skill-zalo-sticker-mention) — Auto-tag sender + send stickers on Zalo
+
+---
+
+<div align="center">
+<sub>🦞 <b>openclaw-fb-messenger</b> · part of the <a href="https://github.com/tuanminhhole">tuanminhhole (Kent)</a> OpenClaw ecosystem</sub>
+</div>

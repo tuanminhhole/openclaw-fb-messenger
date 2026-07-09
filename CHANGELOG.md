@@ -2,6 +2,16 @@
 
 All notable changes to **fb-messenger** are documented here.
 
+## [0.1.1] - 2026-07-09
+### Added
+- Public release: repo is now public and published to ClawHub with a Messenger logo (manifest `icon` field, served via jsDelivr).
+- `setup.providers[].envVars` metadata so onboarding surfaces can inspect required env vars without loading runtime code.
+
+### Changed
+- Ship the prebuilt `dist/` in the ClawHub package so the runtime entry is present on install (no build step for end users).
+- README: clearer install-from-ClawHub steps, build-from-source moved to a contributor note, added the OpenClaw ecosystem section + footer.
+- `channelEnvVars` kept for backward compatibility with older OpenClaw versions (superseded by `setup.providers`).
+
 ## [0.1.0] - 2026-06-25
 ### Added
 - Initial release: Facebook Messenger channel plugin for OpenClaw.

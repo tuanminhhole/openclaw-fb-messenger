@@ -1,8 +1,8 @@
 {
   "name": "openclaw-fb-messenger",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Facebook Messenger channel plugin for OpenClaw \u2014 webhook inbound + Graph API outbound, AI handled by the OpenClaw agent (9router).",
+  "description": "Facebook Messenger channel plugin for OpenClaw — webhook inbound + Graph API outbound, AI handled by the OpenClaw agent (9router).",
   "type": "module",
   "license": "UNLICENSED",
   "author": "tuanminhole",
