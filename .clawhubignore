@@ -1,4 +1,5 @@
 src/
+.agent/
 docs_dev/
 node_modules/
 .git/

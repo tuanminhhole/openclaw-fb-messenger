@@ -93,15 +93,50 @@ FB_MESSENGER_VERIFY_TOKEN=chuoi-tu-chon     # tuỳ bạn đặt
 
 > 🔐 Bí mật (`pageAccessToken`, `appSecret`, `verifyToken`) được đọc từ env trước nên không cần ghi vào `openclaw.json`. `pageId` không bắt buộc — plugin tự suy ra từ token.
 
-### 4. Đăng ký webhook với Meta
+### 4. Tạo endpoint HTTPS công khai
+
+Meta chỉ gửi webhook tới **URL HTTPS công khai**, trong khi gateway của bạn nghe ở cổng nội bộ (vd `:18789`, thường nằm trong Docker). Cần một tunnel/reverse-proxy đứng trước nó.
+
+> ⚠️ **Dùng URL *cố định*.** Hai lệnh nhanh bên dưới (`ngrok http 18789`, `cloudflared tunnel --url …`) cấp một **URL ngẫu nhiên, đổi mỗi lần tunnel khởi động lại** — mỗi lần đổi là phải vào Meta sửa lại Callback URL. Hãy chọn một trong các phương án cố định để cấu hình Meta **một lần duy nhất**.
+>
+> 🐳 Tunnel chạy trên **host**, không nằm trong container — nên **restart Docker KHÔNG làm đổi URL** miễn là tiến trình tunnel còn sống. URL chỉ đổi khi *bản thân tunnel* khởi động lại ở chế độ tạm.
+
+**Cách A — ngrok static domain (miễn phí, nhanh nhất):**
+
+```bash
+# 1. dashboard.ngrok.com → Domains → claim 1 domain tĩnh free, vd: mybot.ngrok-free.app
+# 2. Chạy gắn với domain đó (URL không bao giờ đổi):
+ngrok http --url=mybot.ngrok-free.app 18789
+```
+→ Callback URL: `https://mybot.ngrok-free.app/webhooks/messenger`
+
+**Cách B — Cloudflare named tunnel (miễn phí, tốt cho production; cần domain riêng đã add vào Cloudflare):**
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create openclaw
+cloudflared tunnel route dns openclaw fb.tenmiencuaban.com
+cloudflared tunnel run --url http://localhost:18789 openclaw
+```
+→ Callback URL: `https://fb.tenmiencuaban.com/webhooks/messenger`
+
+**Cách C — VPS có domain thật + TLS** (nginx/Caddy reverse-proxy về `:18789`). Ổn định nhất, không phụ thuộc tunnel bên thứ ba.
+
+### 5. Đăng ký webhook với Meta
 
 Vào *Messenger → Settings → Webhooks*:
 
-- **Callback URL**: `https://<domain-gateway>/webhooks/messenger`
+- **Callback URL**: `https://<domain-cong-khai>/webhooks/messenger`
 - **Verify Token**: trùng với `FB_MESSENGER_VERIFY_TOKEN`
 - **Subscription fields**: tối thiểu `messages` (+ `messaging_postbacks` nếu dùng nút).
 
 > 💡 Việc subscribe Page vào app được plugin **tự làm** lúc khởi động, nên bạn có thể bỏ qua bước "Edit Page Subscriptions". Bạn chỉ cần khai báo Callback URL + Verify Token ở trên.
+>
+> 🔎 Kiểm tra nhanh trước khi dán vào Meta — handshake GET phải trả lại đúng challenge:
+> ```bash
+> curl "https://<domain-cong-khai>/webhooks/messenger?hub.mode=subscribe&hub.verify_token=<FB_MESSENGER_VERIFY_TOKEN>&hub.challenge=ping"
+> # → ping
+> ```
 
 ---
 

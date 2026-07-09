@@ -93,15 +93,50 @@ FB_MESSENGER_VERIFY_TOKEN=my-verify-token   # any string you choose
 
 > 🔐 Secrets (`pageAccessToken`, `appSecret`, `verifyToken`) are read from the environment first, so they don't need to live in `openclaw.json`. `pageId` is optional — the plugin resolves it from the token.
 
-### 4. Register the webhook with Meta
+### 4. Expose a public HTTPS endpoint
+
+Meta only delivers webhooks to a **public HTTPS URL**, but your gateway listens on a local port (e.g. `:18789`, often inside Docker). You need a tunnel/reverse proxy in front of it.
+
+> ⚠️ **Use a *stable* URL.** The quick one-liners below (`ngrok http 18789`, `cloudflared tunnel --url …`) hand out a **random URL that changes every time the tunnel restarts** — and each change forces you to re-edit the Callback URL in Meta. Pick one of the permanent options instead so you configure Meta **once**.
+>
+> 🐳 The tunnel runs on the **host**, not inside the container — so restarting Docker does **not** change the URL as long as the tunnel process stays up. The URL only changes if the *tunnel itself* restarts in ephemeral mode.
+
+**Option A — ngrok static domain (free, fastest):**
+
+```bash
+# 1. dashboard.ngrok.com → Domains → claim 1 free static domain, e.g. mybot.ngrok-free.app
+# 2. Run bound to that domain (URL never changes):
+ngrok http --url=mybot.ngrok-free.app 18789
+```
+→ Callback URL: `https://mybot.ngrok-free.app/webhooks/messenger`
+
+**Option B — Cloudflare named tunnel (free, best for production; needs your own domain on Cloudflare):**
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create openclaw
+cloudflared tunnel route dns openclaw fb.yourdomain.com
+cloudflared tunnel run --url http://localhost:18789 openclaw
+```
+→ Callback URL: `https://fb.yourdomain.com/webhooks/messenger`
+
+**Option C — VPS with a real domain + TLS** (nginx/Caddy reverse-proxy to `:18789`). Most stable; no third-party tunnel.
+
+### 5. Register the webhook with Meta
 
 In *Messenger → Settings → Webhooks*:
 
-- **Callback URL**: `https://<your-gateway-domain>/webhooks/messenger`
+- **Callback URL**: `https://<your-public-domain>/webhooks/messenger`
 - **Verify Token**: the same value as `FB_MESSENGER_VERIFY_TOKEN`
 - **Subscription fields**: at minimum `messages` (and `messaging_postbacks` if you use buttons).
 
 > 💡 The plugin **auto-subscribes the Page to the app webhook on startup**, so you can skip the "Edit Page Subscriptions" step. You only declare the Callback URL + Verify Token above.
+>
+> 🔎 Sanity check before pasting into Meta — the GET handshake should echo the challenge:
+> ```bash
+> curl "https://<your-public-domain>/webhooks/messenger?hub.mode=subscribe&hub.verify_token=<FB_MESSENGER_VERIFY_TOKEN>&hub.challenge=ping"
+> # → ping
+> ```
 
 ---
 

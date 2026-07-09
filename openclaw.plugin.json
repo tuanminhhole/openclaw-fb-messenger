@@ -2,6 +2,8 @@
   "id": "fb-messenger",
   "name": "Facebook Messenger",
   "description": "OpenClaw Facebook Messenger channel plugin via webhook + Graph API.",
+  "icon": "https://cdn.jsdelivr.net/gh/tuanminhhole/openclaw-fb-messenger@main/logo.svg",
+  "version": "0.1.0",
   "activation": {
     "onStartup": false
   },
