@@ -102,6 +102,16 @@ export async function sendMessengerMedia(
   );
 }
 
+/** Reaction len mot tin cua khach: sender_action "react" + payload {message_id, reaction} (Meta Sender Actions v26). */
+export async function sendMessengerReaction(
+  to: string,
+  messageId: string,
+  emoji: string,
+  opts: GraphCallOptions,
+): Promise<GraphSendResult> {
+  return postSendApi({ recipient: { id: to }, sender_action: "react", payload: { message_id: messageId, reaction: emoji } }, opts);
+}
+
 /** Sender action: typing_on | typing_off | mark_seen. Best-effort. */
 export async function sendSenderAction(
   to: string,

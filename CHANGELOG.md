@@ -2,6 +2,14 @@
 
 All notable changes to **fb-messenger** are documented here.
 
+## [0.2.1] - 2026-10-26
+### Added
+- **Ack reaction** (`ackReaction`, defaults to OpenClaw's `messages.ackReaction`; the Zalo code `/-heart` maps to the heart emoji): every inbound message gets a reaction right away, like the Zalo channel. Messenger accepts any emoji, Instagram always sends "love". Works on both transports (Connect proxies `sender_action: react`).
+
+### Fixed
+- **Typing indicator kept alive.** Messenger drops `typing_on` after about 20 seconds while a model turn takes 15 to 50 seconds, so customers saw a silent Page and left (measured on a live Page, 26/10/2026). The plugin now re-sends `typing_on` every 10 seconds until the reply is delivered, on both transports.
+- **Provider errors no longer reach the customer.** OpenClaw returns run failures as a reply starting with "⚠️" ("Authentication failed (HTTP 401)", "billing error", "provider internal error 503"). Four of those were sent to a real customer during the test. They are now logged for the operator and never delivered.
+
 ## [0.2.0] - 2026-10-26
 ### Added
 - **Relay transport via MonkeyTech Connect** (`transport: "relay"`, the default when no `pageAccessToken` is set). The gateway long-polls `GET /api/events?since&wait=25` on `connect.monkeytech.vn` and replies through `POST /api/pages/:id/messages`. The bot holds only a `botKey` (`credentials/fb-messenger/relay.json` or `FB_MESSENGER_RELAY_KEY`); the Page token and the Meta App Secret never leave Connect. No public HTTPS, no Meta developer account on the customer side.

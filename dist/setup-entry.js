@@ -49,6 +49,8 @@ function resolveMessengerAccount(params) {
   const explicit = pick(env.FB_MESSENGER_TRANSPORT, account.transport, channel.transport);
   const transport = explicit === "webhook" || explicit === "relay" ? explicit : pageAccessToken ? "webhook" : "relay";
   const pageId = pick(account.pageId, channel.pageId) ?? (transport === "relay" && accountId !== DEFAULT_ACCOUNT_ID ? accountId : "");
+  const messagesCfg = params.cfg.messages;
+  const rawAck = account.ackReaction ?? channel.ackReaction ?? messagesCfg?.ackReaction ?? "";
   return {
     accountId,
     name: pick(account.name, channel.name),
@@ -65,12 +67,28 @@ function resolveMessengerAccount(params) {
     transport,
     relayUrl,
     instagramId: pick(account.instagramId, channel.instagramId) ?? "",
+    ackReaction: normalizeAckReaction(rawAck),
     config: { ...channel, ...account }
   };
 }
 function isAccountConfigured(account) {
   if (account.transport === "relay") return Boolean(account.pageId);
   return Boolean(account.pageAccessToken && account.verifyToken);
+}
+var ZALO_REACTION_EMOJI = {
+  "/-heart": "\u2764\uFE0F",
+  "/-strong": "\u{1F44D}",
+  ":>": "\u{1F606}",
+  ":-((": "\u{1F622}",
+  ":o": "\u{1F62E}",
+  ":-h": "\u{1F621}",
+  "/-remove": ""
+};
+function normalizeAckReaction(value) {
+  const v = String(value ?? "").trim();
+  if (!v) return "";
+  if (v in ZALO_REACTION_EMOJI) return ZALO_REACTION_EMOJI[v] ?? "";
+  return /^[^\x00-\x7F]{1,8}$/u.test(v) ? v : "";
 }
 function isSenderAllowed(account, senderId) {
   if (account.dmPolicy === "disabled") return false;
@@ -146,6 +164,9 @@ async function sendMessengerMedia(to, mediaUrl, opts) {
     },
     opts
   );
+}
+async function sendMessengerReaction(to, messageId, emoji, opts) {
+  return postSendApi({ recipient: { id: to }, sender_action: "react", payload: { message_id: messageId, reaction: emoji } }, opts);
 }
 async function sendSenderAction(to, action, opts) {
   return postSendApi({ recipient: { id: to }, sender_action: action }, opts);
@@ -395,10 +416,18 @@ async function dispatchMessengerEvent(ctx, event, options = {}) {
     log?.info?.(`[fb-messenger] drop message from ${senderId} (dmPolicy=${account.dmPolicy})`);
     return;
   }
+  if (account.ackReaction && mid) {
+    void sender.react(senderId, mid, account.ackReaction, platform).catch(() => {
+    });
+  }
   void sender.senderAction(senderId, "mark_seen", platform).catch(() => {
   });
   void sender.senderAction(senderId, "typing_on", platform).catch(() => {
   });
+  const typingTimer = setInterval(() => {
+    void sender.senderAction(senderId, "typing_on", platform).catch(() => {
+    });
+  }, TYPING_KEEPALIVE_MS);
   const profile = await sender.getProfile(senderId, platform).catch(() => null);
   const senderName = profile?.name;
   const messageId = mid || `${event.timestamp ?? Date.now()}`;
@@ -439,6 +468,10 @@ async function dispatchMessengerEvent(ctx, event, options = {}) {
     }
   });
   const deliver = async (payload) => {
+    if (isSystemErrorReply(payload.text)) {
+      log?.error?.(`[fb-messenger] model/provider error for ${senderId} (not sent to customer): ${String(payload.text).slice(0, 200)}`);
+      return { ok: false, error: "system error suppressed" };
+    }
     if (payload.mediaUrl) {
       const r = await sender.sendMedia(senderId, payload.mediaUrl, guessMediaType(payload.mediaUrl), platform);
       if (!r.ok) log?.error?.(`[fb-messenger] media send failed: ${r.error}`);
@@ -467,9 +500,17 @@ async function dispatchMessengerEvent(ctx, event, options = {}) {
   } catch (err) {
     log?.error?.(`[fb-messenger] dispatch failed for ${senderId}: ${String(err)}`);
   } finally {
+    clearInterval(typingTimer);
     void sender.senderAction(senderId, "typing_off", platform).catch(() => {
     });
   }
+}
+var TYPING_KEEPALIVE_MS = 1e4;
+function isSystemErrorReply(text) {
+  if (typeof text !== "string") return false;
+  const t = text.trim();
+  if (!t.startsWith("\u26A0\uFE0F")) return false;
+  return /HTTP \d{3}|API key|provider|Authentication|billing|rate limit|quota|temporar|request failed|returned a|9router|model/i.test(t);
 }
 function guessMediaType(url) {
   const ext = (url.split("?")[0] ?? "").toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "";
@@ -603,6 +644,7 @@ var fromGraph = (r) => ({ ok: r.ok, messageId: r.messageId, error: r.error });
 function createGraphSender(account) {
   const opts = { pageAccessToken: account.pageAccessToken, graphApiVersion: account.graphApiVersion };
   return {
+    react: async (to, messageId, emoji, platform) => fromGraph(await sendMessengerReaction(to, messageId, platform === "instagram" ? "love" : emoji, opts)),
     sendText: async (to, text) => fromGraph(await sendMessengerText(to, text, opts)),
     sendMedia: async (to, url, type) => fromGraph(await sendMessengerMedia(to, url, { ...opts, mediaType: type })),
     senderAction: async (to, action) => fromGraph(await sendSenderAction(to, action, opts)),
@@ -630,6 +672,7 @@ function relayResult(status, json) {
 function createRelaySender(opts) {
   const post = (body) => relayCall(opts, `/api/pages/${encodeURIComponent(opts.pageId)}/messages`, { method: "POST", body: JSON.stringify(body) }).then(({ status, json }) => relayResult(status, json)).catch((e) => ({ ok: false, error: String(e), code: null }));
   return {
+    react: (to, messageId, emoji, platform) => post({ recipientId: to, reaction: { messageId, emoji }, platform }),
     sendText: async (to, text, platform) => {
       let last = { ok: true };
       for (const chunk of chunkMessengerText(text, MESSENGER_TEXT_LIMIT)) {
@@ -697,7 +740,8 @@ var messengerConfigAdapter = createHybridChannelConfigAdapter({
     "responsePrefix",
     "transport",
     "relayUrl",
-    "instagramId"
+    "instagramId",
+    "ackReaction"
   ],
   resolveAllowFrom: (account) => account.allowFrom,
   formatAllowFrom: (allowFrom) => formatTrimmedAllowFromEntries(allowFrom)
@@ -724,6 +768,7 @@ var messengerSetupAdapter = {
       ...input.transport ? { transport: input.transport } : {},
       ...input.relayUrl ? { relayUrl: input.relayUrl } : {},
       ...input.instagramId ? { instagramId: input.instagramId } : {},
+      ...typeof input.ackReaction === "string" ? { ackReaction: input.ackReaction } : {},
       dmPolicy: existing.dmPolicy ?? "open",
       allowFrom: existing.allowFrom ?? ["*"]
     };

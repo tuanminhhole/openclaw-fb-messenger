@@ -5,7 +5,7 @@
  * inbound.ts (tra loi trong luot) va outbound adapter (agent nhan chu dong) deu di qua day.
  */
 import { MESSENGER_TEXT_LIMIT, type ResolvedMessengerAccount } from "./config.js";
-import { chunkMessengerText, getUserProfile, sendMessengerMedia, sendMessengerText, sendSenderAction, type GraphSendResult } from "./graph-api.js";
+import { chunkMessengerText, getUserProfile, sendMessengerMedia, sendMessengerReaction, sendMessengerText, sendSenderAction, type GraphSendResult } from "./graph-api.js";
 
 export type MessengerPlatform = "messenger" | "instagram";
 export type SenderAction = "typing_on" | "typing_off" | "mark_seen";
@@ -21,6 +21,8 @@ export interface SendResult {
 }
 
 export interface MessengerSender {
+  /** Tha reaction len tin cua khach (Messenger: emoji bat ky; Instagram: Connect/Graph ep ve "love"). */
+  react(to: string, messageId: string, emoji: string, platform?: MessengerPlatform): Promise<SendResult>;
   sendText(to: string, text: string, platform?: MessengerPlatform): Promise<SendResult>;
   sendMedia(to: string, url: string, type: MediaType, platform?: MessengerPlatform): Promise<SendResult>;
   senderAction(to: string, action: SenderAction, platform?: MessengerPlatform): Promise<SendResult>;
@@ -32,6 +34,7 @@ const fromGraph = (r: GraphSendResult): SendResult => ({ ok: r.ok, messageId: r.
 export function createGraphSender(account: ResolvedMessengerAccount): MessengerSender {
   const opts = { pageAccessToken: account.pageAccessToken, graphApiVersion: account.graphApiVersion };
   return {
+    react: async (to, messageId, emoji, platform) => fromGraph(await sendMessengerReaction(to, messageId, platform === "instagram" ? "love" : emoji, opts)),
     sendText: async (to, text) => fromGraph(await sendMessengerText(to, text, opts)),
     sendMedia: async (to, url, type) => fromGraph(await sendMessengerMedia(to, url, { ...opts, mediaType: type })),
     senderAction: async (to, action) => fromGraph(await sendSenderAction(to, action, opts)),
@@ -73,6 +76,7 @@ export function createRelaySender(opts: RelayClientOptions): MessengerSender {
       .then(({ status, json }) => relayResult(status, json))
       .catch((e) => ({ ok: false, error: String(e), code: null } as SendResult));
   return {
+    react: (to, messageId, emoji, platform) => post({ recipientId: to, reaction: { messageId, emoji }, platform }),
     sendText: async (to, text, platform) => {
       let last: SendResult = { ok: true };
       for (const chunk of chunkMessengerText(text, MESSENGER_TEXT_LIMIT)) {

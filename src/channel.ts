@@ -72,6 +72,7 @@ const messengerConfigAdapter = createHybridChannelConfigAdapter<ResolvedMessenge
     "transport",
     "relayUrl",
     "instagramId",
+    "ackReaction",
   ],
   resolveAllowFrom: (account) => account.allowFrom,
   formatAllowFrom: (allowFrom) => formatTrimmedAllowFromEntries(allowFrom),
@@ -106,6 +107,7 @@ const messengerSetupAdapter = {
       ...(input.transport ? { transport: input.transport } : {}),
       ...(input.relayUrl ? { relayUrl: input.relayUrl } : {}),
       ...(input.instagramId ? { instagramId: input.instagramId } : {}),
+      ...(typeof input.ackReaction === "string" ? { ackReaction: input.ackReaction } : {}),
       dmPolicy: existing.dmPolicy ?? "open",
       allowFrom: existing.allowFrom ?? ["*"],
     };

@@ -31,6 +31,8 @@ export interface MessengerAccountConfig {
   responsePrefix?: string;
   transport?: MessengerTransport;
   relayUrl?: string;
+  /** Reaction xac nhan da nhan tin: emoji, hoac ma Zalo "/-heart" (doi thanh ❤️); "" de tat. */
+  ackReaction?: string;
   /** Instagram professional account gan voi Trang (relay mode: Connect bao ve). */
   instagramId?: string;
 }
@@ -57,6 +59,8 @@ export interface ResolvedMessengerAccount {
   transport: MessengerTransport;
   relayUrl: string;
   instagramId: string;
+  /** Emoji reaction da chuan hoa, "" neu tat. */
+  ackReaction: string;
   config: MessengerAccountConfig;
 }
 
@@ -113,6 +117,11 @@ export function resolveMessengerAccount(params: {
   // Relay: accountId chinh la pageId (Setup UI ghi accounts[<pageId>]), tru khi khai pageId rieng.
   const pageId = pick(account.pageId, channel.pageId) ?? (transport === "relay" && accountId !== DEFAULT_ACCOUNT_ID ? accountId : "");
 
+  // Uu tien khoa cua kenh/account, roi `messages.ackReaction` toan cuc cua OpenClaw (Setup dat "/-heart"
+  // cho Zalo; o day doi sang emoji). Khai "" de tat han.
+  const messagesCfg = (params.cfg as { messages?: { ackReaction?: string } }).messages;
+  const rawAck = account.ackReaction ?? channel.ackReaction ?? messagesCfg?.ackReaction ?? "";
+
   return {
     accountId,
     name: pick(account.name, channel.name),
@@ -130,6 +139,7 @@ export function resolveMessengerAccount(params: {
     transport,
     relayUrl,
     instagramId: pick(account.instagramId, channel.instagramId) ?? "",
+    ackReaction: normalizeAckReaction(rawAck),
     config: { ...channel, ...account },
   };
 }
@@ -141,6 +151,19 @@ export function resolveMessengerAccount(params: {
 export function isAccountConfigured(account: ResolvedMessengerAccount): boolean {
   if (account.transport === "relay") return Boolean(account.pageId);
   return Boolean(account.pageAccessToken && account.verifyToken);
+}
+
+const ZALO_REACTION_EMOJI: Record<string, string> = {
+  "/-heart": "❤️", "/-strong": "👍", ":>": "😆", ":-((": "😢", ":o": "😮", ":-h": "😡", "/-remove": "",
+};
+
+/** "/-heart" (ma Zalo) -> ❤️; emoji giu nguyen; chuoi khac hoac rong -> "" (tat). */
+export function normalizeAckReaction(value: unknown): string {
+  const v = String(value ?? "").trim();
+  if (!v) return "";
+  if (v in ZALO_REACTION_EMOJI) return ZALO_REACTION_EMOJI[v] ?? "";
+  // chi nhan emoji (ky tu ngoai ASCII), tranh gui chu thuong len Graph
+  return /^[^\x00-\x7F]{1,8}$/u.test(v) ? v : "";
 }
 
 /** Allowlist check for DM senders (PSIDs). `*` allows everyone. */

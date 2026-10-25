@@ -3,7 +3,7 @@
   "name": "Facebook Messenger",
   "description": "OpenClaw Facebook Messenger + Instagram channel plugin: relay via MonkeyTech Connect (no token on the bot) or direct webhook + Graph API.",
   "icon": "https://cdn.jsdelivr.net/gh/tuanminhhole/openclaw-fb-messenger@main/logo.svg",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "activation": {
     "onStartup": false
   },
@@ -193,6 +193,10 @@
                 "instagramId": {
                   "type": "string",
                   "description": "Instagram professional account linked to the Page (informational; Connect routes Instagram events by Page)."
+                },
+                "ackReaction": {
+                  "type": "string",
+                  "description": "Reaction sent on every inbound message as a receipt: an emoji, or the Zalo code \"/-heart\" (mapped to the heart emoji). Instagram always uses \"love\". Defaults to messages.ackReaction; set \"\" to disable."
                 }
               }
             }
@@ -212,6 +216,10 @@
           "instagramId": {
             "type": "string",
             "description": "Instagram professional account linked to the Page (informational; Connect routes Instagram events by Page)."
+          },
+          "ackReaction": {
+            "type": "string",
+            "description": "Reaction sent on every inbound message as a receipt: an emoji, or the Zalo code \"/-heart\" (mapped to the heart emoji). Instagram always uses \"love\". Defaults to messages.ackReaction; set \"\" to disable."
           }
         }
       }

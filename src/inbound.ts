@@ -89,9 +89,17 @@ export async function dispatchMessengerEvent(
     return;
   }
 
-  // Best-effort: mark seen + typing while the agent thinks.
+  // Reaction xac nhan da nhan (giong ackReaction cua Zalo): tha ngay, truoc khi model tra loi.
+  if (account.ackReaction && mid) {
+    void sender.react(senderId, mid, account.ackReaction, platform).catch(() => {});
+  }
+
+  // Best-effort: mark seen + typing while the agent thinks. Messenger drops the typing indicator
+  // after ~20 s on its own, and a model turn here is 15 to 50 s, so the customer saw nothing and
+  // walked away (measured 26/10/2026). Re-arm it every 10 s until the reply is delivered.
   void sender.senderAction(senderId, "mark_seen", platform).catch(() => {});
   void sender.senderAction(senderId, "typing_on", platform).catch(() => {});
+  const typingTimer = setInterval(() => { void sender.senderAction(senderId, "typing_on", platform).catch(() => {}); }, TYPING_KEEPALIVE_MS);
 
   const profile = await sender.getProfile(senderId, platform).catch(() => null);
   const senderName = profile?.name;
@@ -138,6 +146,13 @@ export async function dispatchMessengerEvent(
   });
 
   const deliver = async (payload: OutboundReplyPayload): Promise<unknown> => {
+    // A model/provider failure comes back through the same channel as a normal reply, as text
+    // like "⚠️ Authentication failed (provider returned HTTP 401)…". That is for the operator's
+    // log, never for the customer: it leaks internals and reads like the shop is broken.
+    if (isSystemErrorReply(payload.text)) {
+      log?.error?.(`[fb-messenger] model/provider error for ${senderId} (not sent to customer): ${String(payload.text).slice(0, 200)}`);
+      return { ok: false, error: "system error suppressed" };
+    }
     if (payload.mediaUrl) {
       const r = await sender.sendMedia(senderId, payload.mediaUrl, guessMediaType(payload.mediaUrl), platform);
       if (!r.ok) log?.error?.(`[fb-messenger] media send failed: ${r.error}`);
@@ -168,8 +183,22 @@ export async function dispatchMessengerEvent(
   } catch (err) {
     log?.error?.(`[fb-messenger] dispatch failed for ${senderId}: ${String(err)}`);
   } finally {
+    clearInterval(typingTimer);
     void sender.senderAction(senderId, "typing_off", platform).catch(() => {});
   }
+}
+
+export const TYPING_KEEPALIVE_MS = 10_000;
+
+/**
+ * OpenClaw surfaces run failures as a reply whose text starts with "⚠️" and names the provider,
+ * an HTTP status, a key or a quota. Those never go to the customer.
+ */
+export function isSystemErrorReply(text: unknown): boolean {
+  if (typeof text !== "string") return false;
+  const t = text.trim();
+  if (!t.startsWith("⚠️")) return false;
+  return /HTTP \d{3}|API key|provider|Authentication|billing|rate limit|quota|temporar|request failed|returned a|9router|model/i.test(t);
 }
 
 export function guessMediaType(url: string): "image" | "video" | "audio" | "file" {
