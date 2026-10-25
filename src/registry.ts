@@ -1,6 +1,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import type { ChannelReplyDispatchSurface } from "./types.js";
 import type { ResolvedMessengerAccount } from "./config.js";
+import type { MessengerSender } from "./sender.js";
 
 /**
  * Bridge between `gateway.startAccount` (which holds the live channelRuntime)
@@ -12,11 +13,20 @@ export interface MessengerDispatchContext {
   account: ResolvedMessengerAccount;
   cfg: OpenClawConfig;
   channelRuntime: ChannelReplyDispatchSurface;
+  /** Duong gui: Graph truc tiep (webhook) hay qua Connect (relay). */
+  sender: MessengerSender;
   log?: {
     info?: (msg: string) => void;
     warn?: (msg: string) => void;
     error?: (msg: string) => void;
   };
+  setStatus?: (s: unknown) => void;
+}
+
+/** Tim context theo accountId (outbound adapter nhan accountId, khong phai pageId). */
+export function getDispatchContextForAccount(accountId: string): MessengerDispatchContext | undefined {
+  for (const ctx of byPageId.values()) if (ctx.account.accountId === accountId) return ctx;
+  return undefined;
 }
 
 const byPageId = new Map<string, MessengerDispatchContext>();
@@ -25,7 +35,7 @@ export function registerDispatchContext(ctx: MessengerDispatchContext): () => vo
   const pageId = ctx.account.pageId?.trim();
   if (!pageId) {
     ctx.log?.warn?.(
-      `[fb-messenger] account ${ctx.account.accountId} has no pageId — webhook routing disabled for it`,
+      `[fb-messenger] account ${ctx.account.accountId} has no pageId - webhook routing disabled for it`,
     );
     return () => {};
   }
@@ -39,7 +49,7 @@ export function getDispatchContextForPage(pageId: string): MessengerDispatchCont
   return byPageId.get(pageId.trim());
 }
 
-/** Any registered account whose verifyToken matches — used for the GET handshake. */
+/** Any registered account whose verifyToken matches - used for the GET handshake. */
 export function findContextByVerifyToken(token: string): MessengerDispatchContext | undefined {
   const t = token.trim();
   if (!t) return undefined;
@@ -53,7 +63,7 @@ export function hasRegisteredAccounts(): boolean {
   return byPageId.size > 0;
 }
 
-/** The sole registered context, if exactly one — used as a forgiving fallback. */
+/** The sole registered context, if exactly one - used as a forgiving fallback. */
 export function getSoleContext(): MessengerDispatchContext | undefined {
   return byPageId.size === 1 ? [...byPageId.values()][0] : undefined;
 }

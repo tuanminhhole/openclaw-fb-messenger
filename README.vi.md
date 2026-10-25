@@ -2,9 +2,9 @@
 
 # 💬 fb-messenger
 
-### Kênh **Facebook Page Messenger** cho OpenClaw — webhook vào, Graph API ra
+### Kênh **Facebook Page Messenger** cho OpenClaw - webhook vào, Graph API ra
 
-*Plugin chỉ lo vận chuyển tin nhắn. Câu trả lời do agent OpenClaw và provider model bạn cấu hình (ví dụ **9Router**) sinh ra — giống hệt kênh Telegram và Zalo.*
+*Plugin chỉ lo vận chuyển tin nhắn. Câu trả lời do agent OpenClaw và provider model bạn cấu hình (ví dụ **9Router**) sinh ra - giống hệt kênh Telegram và Zalo.*
 
 ![OpenClaw](https://img.shields.io/badge/OpenClaw-plugin-FF3B4D?style=for-the-badge)
 ![Channel](https://img.shields.io/badge/K%C3%AAnh-Facebook%20Messenger-0866FF?style=for-the-badge&logo=messenger&logoColor=white)
@@ -19,11 +19,11 @@
 
 ## 🎁 fb-messenger là gì?
 
-`fb-messenger` thêm **Facebook Page Messenger** thành một kênh OpenClaw, song song với Telegram và Zalo. Plugin chỉ lo phần đường ống — **nhận** sự kiện và **gửi** câu trả lời — còn phần "suy nghĩ" do agent OpenClaw đảm nhận.
+`fb-messenger` thêm **Facebook Page Messenger** thành một kênh OpenClaw, song song với Telegram và Zalo. Plugin chỉ lo phần đường ống - **nhận** sự kiện và **gửi** câu trả lời - còn phần "suy nghĩ" do agent OpenClaw đảm nhận.
 
-- 📥 **Inbound** — webhook công khai (`/webhooks/messenger`) nhận sự kiện Meta, xác minh chữ ký `X-Hub-Signature-256`, rồi đẩy từng tin vào agent.
-- 📤 **Outbound** — trả lời stream về qua Graph API (`POST /me/messages`), tự chunk cho vừa giới hạn Messenger.
-- 🪄 **Tự chữa lành** — nhận cả User token (tự đổi sang Page token), tự suy ra đúng Page ID, và **tự subscribe Page vào webhook lúc khởi động** — không cần thao tác tay trên dashboard Meta.
+- 📥 **Inbound** - webhook công khai (`/webhooks/messenger`) nhận sự kiện Meta, xác minh chữ ký `X-Hub-Signature-256`, rồi đẩy từng tin vào agent.
+- 📤 **Outbound** - trả lời stream về qua Graph API (`POST /me/messages`), tự chunk cho vừa giới hạn Messenger.
+- 🪄 **Tự chữa lành** - nhận cả User token (tự đổi sang Page token), tự suy ra đúng Page ID, và **tự subscribe Page vào webhook lúc khởi động** - không cần thao tác tay trên dashboard Meta.
 
 ```mermaid
 flowchart LR
@@ -57,11 +57,33 @@ openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger
 openclaw plugins install clawhub:tuanminhhole/openclaw-fb-messenger --force
 ```
 
-Gói ClawHub đã kèm sẵn `dist/` build sẵn, nên **không cần build gì cả** — cài xong, cấu hình (bên dưới), khởi động lại gateway.
+Gói ClawHub đã kèm sẵn `dist/` build sẵn, nên **không cần build gì cả** - cài xong, cấu hình (bên dưới), khởi động lại gateway.
 
 > 💡 Muốn cài qua giao diện? [**openclaw-setup**](https://github.com/tuanminhhole/openclaw-setup) cài & cấu hình kênh này (Page token, webhook) ngay trên dashboard.
 
 ---
+
+## 🔗 Relay qua MonkeyTech Connect (0.2.0, khuyến nghị)
+
+Từ 0.2.0 plugin không cần HTTPS công khai, không cần Page token, không cần tài khoản developer của
+Meta trên máy bot. MonkeyTech giữ một app Meta đã qua xét duyệt tại
+[connect.monkeytech.vn](https://connect.monkeytech.vn); chủ Trang bấm **Tiếp tục với Facebook** một
+lần, Connect nhận webhook, gateway kéo về:
+
+```
+Messenger / Instagram -> webhook Meta -> connect.monkeytech.vn -> GET /api/events (long-poll 25 giây)
+agent trả lời -> POST /api/pages/:id/messages trên Connect -> Graph API (Page token ở lại Connect)
+```
+
+- `transport` mặc định là `relay` khi không khai `pageAccessToken`.
+- Khoá account chính là Page ID: `channels.fb-messenger.accounts["<pageId>"] = { enabled: true, name: "Shop" }`.
+  Một gateway phục vụ được nhiều Trang.
+- Bot key do Setup UI ghi vào `<state>/credentials/fb-messenger/relay.json` (`{ "botKey": "mck_..." }`),
+  hoặc truyền bằng `FB_MESSENGER_RELAY_KEY`. `relayUrl` đổi địa chỉ Connect (tự dựng Connect riêng).
+- Instagram Direct về cùng account; peer có dạng `ig:<igsid>` để agent (và tool `message`) phân biệt
+  hai nền tảng.
+- Chế độ **webhook** cũ vẫn dùng được cho ai có app Meta riêng: đặt `transport: "webhook"` kèm
+  `pageAccessToken`, `verifyToken` và `appSecret` (nay bắt buộc, webhook không chữ ký bị bỏ).
 
 ## ⚙️ Cấu hình
 
@@ -75,8 +97,8 @@ Gói ClawHub đã kèm sẵn `dist/` build sẵn, nên **không cần build gì 
 ### 2. Biến môi trường
 
 ```bash
-FB_MESSENGER_PAGE_ACCESS_TOKEN=EAAB...      # token bất kỳ — kể cả User token ngắn hạn lấy từ Graph API Explorer
-FB_MESSENGER_APP_ID=1234567890              # App ID của Meta — cần để tạo Page token KHÔNG hết hạn
+FB_MESSENGER_PAGE_ACCESS_TOKEN=EAAB...      # token bất kỳ - kể cả User token ngắn hạn lấy từ Graph API Explorer
+FB_MESSENGER_APP_ID=1234567890              # App ID của Meta - cần để tạo Page token KHÔNG hết hạn
 FB_MESSENGER_APP_SECRET=xxxxxxxx            # App Secret (xác minh chữ ký + đổi token)
 FB_MESSENGER_VERIFY_TOKEN=chuoi-tu-chon     # tuỳ bạn đặt
 ```
@@ -98,17 +120,17 @@ FB_MESSENGER_VERIFY_TOKEN=chuoi-tu-chon     # tuỳ bạn đặt
 }
 ```
 
-> 🔐 Bí mật (`pageAccessToken`, `appSecret`, `verifyToken`) được đọc từ env trước nên không cần ghi vào `openclaw.json`. `pageId` không bắt buộc — plugin tự suy ra từ token.
+> 🔐 Bí mật (`pageAccessToken`, `appSecret`, `verifyToken`) được đọc từ env trước nên không cần ghi vào `openclaw.json`. `pageId` không bắt buộc - plugin tự suy ra từ token.
 
 ### 4. Tạo endpoint HTTPS công khai
 
 Meta chỉ gửi webhook tới **URL HTTPS công khai**, trong khi gateway của bạn nghe ở cổng nội bộ (vd `:18789`, thường nằm trong Docker). Cần một tunnel/reverse-proxy đứng trước nó.
 
-> ⚠️ **Dùng URL *cố định*.** Hai lệnh nhanh bên dưới (`ngrok http 18789`, `cloudflared tunnel --url …`) cấp một **URL ngẫu nhiên, đổi mỗi lần tunnel khởi động lại** — mỗi lần đổi là phải vào Meta sửa lại Callback URL. Hãy chọn một trong các phương án cố định để cấu hình Meta **một lần duy nhất**.
+> ⚠️ **Dùng URL *cố định*.** Hai lệnh nhanh bên dưới (`ngrok http 18789`, `cloudflared tunnel --url …`) cấp một **URL ngẫu nhiên, đổi mỗi lần tunnel khởi động lại** - mỗi lần đổi là phải vào Meta sửa lại Callback URL. Hãy chọn một trong các phương án cố định để cấu hình Meta **một lần duy nhất**.
 >
-> 🐳 Tunnel chạy trên **host**, không nằm trong container — nên **restart Docker KHÔNG làm đổi URL** miễn là tiến trình tunnel còn sống. URL chỉ đổi khi *bản thân tunnel* khởi động lại ở chế độ tạm.
+> 🐳 Tunnel chạy trên **host**, không nằm trong container - nên **restart Docker KHÔNG làm đổi URL** miễn là tiến trình tunnel còn sống. URL chỉ đổi khi *bản thân tunnel* khởi động lại ở chế độ tạm.
 
-**Cách A — ngrok static domain (miễn phí, nhanh nhất):**
+**Cách A - ngrok static domain (miễn phí, nhanh nhất):**
 
 ```bash
 # 1. dashboard.ngrok.com → Domains → claim 1 domain tĩnh free, vd: mybot.ngrok-free.app
@@ -117,7 +139,7 @@ ngrok http --url=mybot.ngrok-free.app 18789
 ```
 → Callback URL: `https://mybot.ngrok-free.app/webhooks/messenger`
 
-**Cách B — Cloudflare named tunnel (miễn phí, tốt cho production; cần domain riêng đã add vào Cloudflare):**
+**Cách B - Cloudflare named tunnel (miễn phí, tốt cho production; cần domain riêng đã add vào Cloudflare):**
 
 ```bash
 cloudflared tunnel login
@@ -127,7 +149,7 @@ cloudflared tunnel run --url http://localhost:18789 openclaw
 ```
 → Callback URL: `https://fb.tenmiencuaban.com/webhooks/messenger`
 
-**Cách C — VPS có domain thật + TLS** (nginx/Caddy reverse-proxy về `:18789`). Ổn định nhất, không phụ thuộc tunnel bên thứ ba.
+**Cách C - VPS có domain thật + TLS** (nginx/Caddy reverse-proxy về `:18789`). Ổn định nhất, không phụ thuộc tunnel bên thứ ba.
 
 ### 5. Đăng ký webhook với Meta
 
@@ -139,7 +161,7 @@ Vào *Messenger → Settings → Webhooks*:
 
 > 💡 Việc subscribe Page vào app được plugin **tự làm** lúc khởi động, nên bạn có thể bỏ qua bước "Edit Page Subscriptions". Bạn chỉ cần khai báo Callback URL + Verify Token ở trên.
 >
-> 🔎 Kiểm tra nhanh trước khi dán vào Meta — handshake GET phải trả lại đúng challenge:
+> 🔎 Kiểm tra nhanh trước khi dán vào Meta - handshake GET phải trả lại đúng challenge:
 > ```bash
 > curl "https://<domain-cong-khai>/webhooks/messenger?hub.mode=subscribe&hub.verify_token=<FB_MESSENGER_VERIFY_TOKEN>&hub.challenge=ping"
 > # → ping
@@ -149,21 +171,21 @@ Vào *Messenger → Settings → Webhooks*:
 
 ## 🗺️ Phạm vi
 
-**v1** — hội thoại 1:1 (DM) dạng text, DM policy / allowlist, xác minh chữ ký, tự chunk, token tự chữa lành, tự subscribe.
+**v1** - hội thoại 1:1 (DM) dạng text, DM policy / allowlist, xác minh chữ ký, tự chunk, token tự chữa lành, tự subscribe.
 
-**Chưa có (v2)** — nhóm / đa Page, nút quick-reply & menu cố định, gửi chủ động (agent khởi xướng), reactions, handover.
+**Chưa có (v2)** - nhóm / đa Page, nút quick-reply & menu cố định, gửi chủ động (agent khởi xướng), reactions, handover.
 
 ---
 
 ## 📄 Giấy phép
 
-Proprietary — © 2026 tuanminhhole. Bảo lưu mọi quyền. Xem [LICENSE](LICENSE).
+Proprietary - © 2026 tuanminhhole. Bảo lưu mọi quyền. Xem [LICENSE](LICENSE).
 
 ---
 
 ## 🙌 Tác giả
 
-Làm bởi **[tuanminhhole (Kent)](https://github.com/tuanminhhole)**. Mọi issue / PR cải tiến đều được hoan nghênh — thấy hữu ích thì ⭐ repo để nhiều người biết tới nhé!
+Làm bởi **[tuanminhhole (Kent)](https://github.com/tuanminhhole)**. Mọi issue / PR cải tiến đều được hoan nghênh - thấy hữu ích thì ⭐ repo để nhiều người biết tới nhé!
 
 ---
 
@@ -172,22 +194,22 @@ Làm bởi **[tuanminhhole (Kent)](https://github.com/tuanminhhole)**. Mọi iss
 Các repo đi kèm để bạn dựng một trợ lý AI "tự vận hành" hoàn chỉnh:
 
 **🚀 Cài đặt & khung nền**
-- [openclaw-setup](https://github.com/tuanminhhole/openclaw-setup) — Cài & cấu hình bot AI (Telegram / Zalo / Messenger) bằng OpenClaw + 9Router + Docker — có dashboard trực quan
-- [9router](https://github.com/tuanminhhole/9router) — Nối mọi AI code tool tới 40+ nhà cung cấp & 100+ model
-- [vietbrain](https://github.com/tuanminhhole/vietbrain) — Bộ khung "Bộ Não Thứ Hai" tiếng Việt cho Obsidian (sẵn sàng AI)
+- [openclaw-setup](https://github.com/tuanminhhole/openclaw-setup) - Cài & cấu hình bot AI (Telegram / Zalo / Messenger) bằng OpenClaw + 9Router + Docker - có dashboard trực quan
+- [9router](https://github.com/tuanminhhole/9router) - Nối mọi AI code tool tới 40+ nhà cung cấp & 100+ model
+- [vietbrain](https://github.com/tuanminhhole/vietbrain) - Bộ khung "Bộ Não Thứ Hai" tiếng Việt cho Obsidian (sẵn sàng AI)
 
 **🔌 Plugin (runtime)**
-- `openclaw-fb-messenger` — Kênh Facebook Messenger *(repo này)*
-- [openclaw-zalo-mod](https://github.com/tuanminhhole/openclaw-zalo-mod) — Quản lý nhóm Zalo zero-token (slash command, anti-spam, warn, memory)
-- [openclaw-browser-automation](https://github.com/tuanminhhole/openclaw-browser-automation) — Smart Search & Browser Automation qua CDP
-- [openclaw-telegram-multibot-relay](https://github.com/tuanminhhole/openclaw-telegram-multibot-relay) — Multibot Telegram relay, delegation & cron nhắc lịch native
-- [openclaw-facebook-crawler](https://github.com/tuanminhhole/openclaw-facebook-crawler) — Crawl tin đăng trong group Facebook
-- [openclaw-n8n-facebook-poster](https://github.com/tuanminhhole/openclaw-n8n-facebook-poster) — Đăng bài Facebook qua webhook n8n
+- `openclaw-fb-messenger` - Kênh Facebook Messenger *(repo này)*
+- [openclaw-zalo-mod](https://github.com/tuanminhhole/openclaw-zalo-mod) - Quản lý nhóm Zalo zero-token (slash command, anti-spam, warn, memory)
+- [openclaw-browser-automation](https://github.com/tuanminhhole/openclaw-browser-automation) - Smart Search & Browser Automation qua CDP
+- [openclaw-telegram-multibot-relay](https://github.com/tuanminhhole/openclaw-telegram-multibot-relay) - Multibot Telegram relay, delegation & cron nhắc lịch native
+- [openclaw-facebook-crawler](https://github.com/tuanminhhole/openclaw-facebook-crawler) - Crawl tin đăng trong group Facebook
+- [openclaw-n8n-facebook-poster](https://github.com/tuanminhhole/openclaw-n8n-facebook-poster) - Đăng bài Facebook qua webhook n8n
 
 **🧩 Skill**
-- [openclaw-skill-learning-memory](https://github.com/tuanminhhole/openclaw-skill-learning-memory) — Bộ nhớ dài hạn tự tiến hoá (Super Memory)
-- [openclaw-skill-infographic](https://github.com/tuanminhhole/openclaw-skill-infographic) — Tạo infographic / banner / poster
-- [openclaw-skill-zalo-sticker-mention](https://github.com/tuanminhhole/openclaw-skill-zalo-sticker-mention) — Tự tag người gửi + gửi sticker trên Zalo
+- [openclaw-skill-learning-memory](https://github.com/tuanminhhole/openclaw-skill-learning-memory) - Bộ nhớ dài hạn tự tiến hoá (Super Memory)
+- [openclaw-skill-infographic](https://github.com/tuanminhhole/openclaw-skill-infographic) - Tạo infographic / banner / poster
+- [openclaw-skill-zalo-sticker-mention](https://github.com/tuanminhhole/openclaw-skill-zalo-sticker-mention) - Tự tag người gửi + gửi sticker trên Zalo
 
 ---
 

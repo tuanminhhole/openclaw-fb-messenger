@@ -63,3 +63,57 @@ export async function clearPageCredential(accountId: string): Promise<void> {
     /* ignore */
   }
 }
+
+// ── Relay (MonkeyTech Connect) ────────────────────────────────────────────────
+/** `<state>/credentials/fb-messenger/relay.json`: botKey do Setup UI ghi sau khi dang ky bot voi Connect. */
+export interface RelayCredential {
+  botKey: string;
+  botId?: string;
+  url?: string;
+}
+
+function relayPath(): string {
+  return join(stateDir(), "credentials", CHANNEL_ID, "relay.json");
+}
+function relayCursorPath(): string {
+  return join(stateDir(), "credentials", CHANNEL_ID, "relay-cursor.json");
+}
+
+/** botKey: env FB_MESSENGER_RELAY_KEY thang truoc, roi relay.json. */
+export async function loadRelayCredential(env: NodeJS.ProcessEnv = process.env): Promise<RelayCredential | null> {
+  const fromEnv = (env.FB_MESSENGER_RELAY_KEY ?? "").trim();
+  if (fromEnv) return { botKey: fromEnv, url: (env.FB_MESSENGER_RELAY_URL ?? "").trim() || undefined };
+  try {
+    const parsed = JSON.parse(await fs.readFile(relayPath(), "utf8")) as RelayCredential;
+    if (parsed?.botKey) return parsed;
+  } catch {
+    /* not present yet */
+  }
+  return null;
+}
+
+export async function saveRelayCredential(cred: RelayCredential): Promise<void> {
+  const path = relayPath();
+  await fs.mkdir(dirname(path), { recursive: true });
+  await fs.writeFile(path, JSON.stringify(cred, null, 2), { encoding: "utf8", mode: 0o600 });
+}
+
+/** Con tro long-poll: restart khong mat tin, cung khong doi lai lich su. */
+export async function loadRelayCursor(): Promise<number | null> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(relayCursorPath(), "utf8")) as { cursor?: number };
+    return typeof parsed?.cursor === "number" ? parsed.cursor : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveRelayCursor(cursor: number): Promise<void> {
+  const path = relayCursorPath();
+  try {
+    await fs.mkdir(dirname(path), { recursive: true });
+    await fs.writeFile(path, JSON.stringify({ cursor, savedAt: new Date().toISOString() }), "utf8");
+  } catch {
+    /* best-effort */
+  }
+}

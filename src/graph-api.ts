@@ -169,7 +169,7 @@ export async function validateToken(token: string, graphApiVersion?: string): Pr
  * Exchange a (short-lived) User token for a long-lived one. Needs the Meta App
  * credentials. Returns the long-lived user token, or null if it isn't a user
  * token / credentials are missing. A Page token derived from a long-lived user
- * token never expires — this is the key step to a permanent setup.
+ * token never expires - this is the key step to a permanent setup.
  */
 export async function exchangeLongLivedUserToken(
   token: string,
@@ -199,7 +199,7 @@ export async function exchangeLongLivedUserToken(
  *   long-lived user token   --/me/accounts------> never-expiring Page token
  * `permanent` is true when the Page token came from a long-lived user token (or
  * the supplied token is already a Page token); false when it was only derivable
- * from a short-lived user token (will expire — caller should not persist it).
+ * from a short-lived user token (will expire - caller should not persist it).
  */
 export async function resolvePermanentPageContext(
   token: string,
@@ -231,7 +231,7 @@ export async function resolvePermanentPageContext(
   } catch {
     /* fall through */
   }
-  // 3) The supplied token is likely already a Page token — Page tokens don't expire.
+  // 3) The supplied token is likely already a Page token - Page tokens don't expire.
   try {
     const meRes = await fetch(graphUrl("/me?fields=id", version, token));
     const me = (await meRes.json().catch(() => ({}))) as { id?: string };
@@ -244,7 +244,7 @@ export async function resolvePermanentPageContext(
 
 /**
  * Subscribe the Page to this app's webhook fields (idempotent). Removes the
- * manual "Edit Page Subscriptions" step — the gateway does it on startup.
+ * manual "Edit Page Subscriptions" step - the gateway does it on startup.
  */
 export async function subscribePageToApp(
   pageId: string,

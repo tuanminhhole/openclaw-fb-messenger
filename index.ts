@@ -5,7 +5,7 @@ import { handleMessengerWebhook, WEBHOOK_PATH } from "./src/webhook.js";
 /**
  * Full channel entry. `defineChannelPluginEntry` registers the `fb-messenger`
  * channel capability; `registerFull` additionally mounts the public Meta
- * webhook on the gateway HTTP surface (`auth: "plugin"` — the plugin verifies
+ * webhook on the gateway HTTP surface (`auth: "plugin"` - the plugin verifies
  * the X-Hub-Signature-256 itself, so the gateway must not gate it).
  */
 export default defineChannelPluginEntry({

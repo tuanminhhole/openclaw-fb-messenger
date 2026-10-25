@@ -1,8 +1,8 @@
 {
   "name": "openclaw-fb-messenger",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
-  "description": "Facebook Messenger channel plugin for OpenClaw — webhook inbound + Graph API outbound, AI handled by the OpenClaw agent (9router).",
+  "description": "Facebook Messenger + Instagram channel plugin for OpenClaw: relay via MonkeyTech Connect (no token on the bot) or direct webhook + Graph API; AI handled by the OpenClaw agent.",
   "type": "module",
   "license": "UNLICENSED",
   "author": "tuanminhole",
@@ -38,7 +38,8 @@
     "check": "tsc --noEmit && node --check dist/index.js",
     "test": "tsup docs_dev/tests/smoke.ts --format esm --external openclaw -d docs_dev/tests/dist && node docs_dev/tests/dist/smoke.js",
     "release": "node docs_dev/scripts/update.mjs",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test:e2e": "tsup docs_dev/tests/e2e-connect.ts --format esm --external openclaw -d docs_dev/tests/dist && node docs_dev/tests/dist/e2e-connect.js"
   },
   "openclaw": {
     "extensions": [
@@ -55,7 +56,7 @@
       "selectionLabel": "Facebook (Messenger)",
       "docsPath": "/channels/fb-messenger",
       "docsLabel": "fb-messenger",
-      "blurb": "Facebook Page Messenger via webhook + Graph API.",
+      "blurb": "Facebook Page Messenger + Instagram via MonkeyTech Connect relay or direct webhook.",
       "aliases": [
         "fb",
         "messenger"

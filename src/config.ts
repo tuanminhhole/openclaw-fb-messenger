@@ -2,10 +2,17 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 
 export const CHANNEL_ID = "fb-messenger";
 export const DEFAULT_ACCOUNT_ID = "default";
-export const DEFAULT_GRAPH_API_VERSION = "v21.0";
+export const DEFAULT_GRAPH_API_VERSION = "v24.0";
 export const MESSENGER_TEXT_LIMIT = 2000;
+/** MonkeyTech Connect: giu token Trang + App Secret, bot chi cam botKey (xem README muc Relay). */
+export const DEFAULT_RELAY_URL = "https://connect.monkeytech.vn";
 
 export type MessengerDmPolicy = "pairing" | "allowlist" | "open" | "disabled";
+/**
+ * webhook: Meta goi thang vao gateway (can HTTPS public, token + App Secret o may nay).
+ * relay:   gateway long-poll MonkeyTech Connect (bot sau NAT, khong token, khong App Secret).
+ */
+export type MessengerTransport = "webhook" | "relay";
 
 /** Per-account config as stored under `channels.fb-messenger` in openclaw.json. */
 export interface MessengerAccountConfig {
@@ -22,6 +29,10 @@ export interface MessengerAccountConfig {
   historyLimit?: number;
   messagePrefix?: string;
   responsePrefix?: string;
+  transport?: MessengerTransport;
+  relayUrl?: string;
+  /** Instagram professional account gan voi Trang (relay mode: Connect bao ve). */
+  instagramId?: string;
 }
 
 export interface MessengerChannelConfig extends MessengerAccountConfig {
@@ -43,6 +54,9 @@ export interface ResolvedMessengerAccount {
   dmPolicy: MessengerDmPolicy;
   allowFrom: string[];
   historyLimit: number;
+  transport: MessengerTransport;
+  relayUrl: string;
+  instagramId: string;
   config: MessengerAccountConfig;
 }
 
@@ -92,12 +106,18 @@ export function resolveMessengerAccount(params: {
     pick(env.FB_MESSENGER_APP_SECRET, account.appSecret, channel.appSecret) ?? "";
   const verifyToken =
     pick(env.FB_MESSENGER_VERIFY_TOKEN, account.verifyToken, channel.verifyToken) ?? "";
+  const relayUrl = (pick(env.FB_MESSENGER_RELAY_URL, account.relayUrl, channel.relayUrl) ?? DEFAULT_RELAY_URL).replace(/\/+$/, "");
+  // Mac dinh: co token Trang thi la webhook (ban 0.1 cu), khong co thi la relay.
+  const explicit = pick(env.FB_MESSENGER_TRANSPORT as MessengerTransport | undefined, account.transport, channel.transport);
+  const transport: MessengerTransport = explicit === "webhook" || explicit === "relay" ? explicit : pageAccessToken ? "webhook" : "relay";
+  // Relay: accountId chinh la pageId (Setup UI ghi accounts[<pageId>]), tru khi khai pageId rieng.
+  const pageId = pick(account.pageId, channel.pageId) ?? (transport === "relay" && accountId !== DEFAULT_ACCOUNT_ID ? accountId : "");
 
   return {
     accountId,
     name: pick(account.name, channel.name),
     enabled: account.enabled ?? channel.enabled ?? true,
-    pageId: pick(account.pageId, channel.pageId) ?? "",
+    pageId,
     pageAccessToken,
     appId,
     appSecret,
@@ -107,12 +127,19 @@ export function resolveMessengerAccount(params: {
     dmPolicy: (pick(account.dmPolicy, channel.dmPolicy) ?? "open") as MessengerDmPolicy,
     allowFrom: account.allowFrom ?? channel.allowFrom ?? ["*"],
     historyLimit: account.historyLimit ?? channel.historyLimit ?? 50,
+    transport,
+    relayUrl,
+    instagramId: pick(account.instagramId, channel.instagramId) ?? "",
     config: { ...channel, ...account },
   };
 }
 
-/** True if the account has the minimum credentials to operate. */
+/**
+ * True if the account has the minimum credentials to operate.
+ * webhook: Page token + verify token. relay: a pageId (the botKey lives in the credentials dir).
+ */
 export function isAccountConfigured(account: ResolvedMessengerAccount): boolean {
+  if (account.transport === "relay") return Boolean(account.pageId);
   return Boolean(account.pageAccessToken && account.verifyToken);
 }
 

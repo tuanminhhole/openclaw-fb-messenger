@@ -22,7 +22,9 @@ function readRawBody(req: IncomingMessage): Promise<Buffer> {
 
 /** Constant-time check of Meta's `X-Hub-Signature-256: sha256=<hex>` header. */
 function verifySignature(rawBody: Buffer, header: string | undefined, appSecret: string): boolean {
-  if (!appSecret) return true; // no secret configured → skip (dev only)
+  // 0.2.0: khong con "thieu secret thi bo qua". Mot webhook public ma khong kiem chu ky la ai cung
+  // nhet tin gia vao duoc. Thieu App Secret thi dung relay (Connect kiem ho) hoac dien vao config.
+  if (!appSecret) return false;
   if (!header || !header.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", appSecret).update(rawBody).digest("hex");
   const provided = header.slice("sha256=".length);
@@ -88,12 +90,13 @@ export async function handleMessengerWebhook(
     for (const entry of body.entry) {
       const ctx = getDispatchContextForPage(entry.id ?? "") ?? getSoleContext();
       if (!ctx) continue;
+      if (ctx.account.transport !== "webhook") continue; // relay account: Meta khong goi thang vao day
       if (!verifySignature(rawBody, signature, ctx.account.appSecret)) {
-        ctx.log?.warn?.(`[fb-messenger] signature mismatch for page ${entry.id} — dropping`);
+        ctx.log?.warn?.(`[fb-messenger] signature mismatch for page ${entry.id} (or no App Secret configured) - dropping`);
         continue;
       }
       for (const event of entry.messaging ?? []) {
-        void dispatchMessengerEvent(ctx, event).catch((err) => {
+        void dispatchMessengerEvent(ctx, event, { platform: "messenger" }).catch((err) => {
           ctx.log?.error?.(`[fb-messenger] event handling error: ${String(err)}`);
         });
       }

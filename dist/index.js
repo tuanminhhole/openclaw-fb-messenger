@@ -14,8 +14,9 @@ import {
 // src/config.ts
 var CHANNEL_ID = "fb-messenger";
 var DEFAULT_ACCOUNT_ID = "default";
-var DEFAULT_GRAPH_API_VERSION = "v21.0";
+var DEFAULT_GRAPH_API_VERSION = "v24.0";
 var MESSENGER_TEXT_LIMIT = 2e3;
+var DEFAULT_RELAY_URL = "https://connect.monkeytech.vn";
 function readChannelConfig(cfg) {
   const channels = cfg.channels ?? {};
   return channels[CHANNEL_ID] ?? {};
@@ -44,11 +45,15 @@ function resolveMessengerAccount(params) {
   const appId = pick(env.FB_MESSENGER_APP_ID, account.appId, channel.appId) ?? "";
   const appSecret = pick(env.FB_MESSENGER_APP_SECRET, account.appSecret, channel.appSecret) ?? "";
   const verifyToken = pick(env.FB_MESSENGER_VERIFY_TOKEN, account.verifyToken, channel.verifyToken) ?? "";
+  const relayUrl = (pick(env.FB_MESSENGER_RELAY_URL, account.relayUrl, channel.relayUrl) ?? DEFAULT_RELAY_URL).replace(/\/+$/, "");
+  const explicit = pick(env.FB_MESSENGER_TRANSPORT, account.transport, channel.transport);
+  const transport = explicit === "webhook" || explicit === "relay" ? explicit : pageAccessToken ? "webhook" : "relay";
+  const pageId = pick(account.pageId, channel.pageId) ?? (transport === "relay" && accountId !== DEFAULT_ACCOUNT_ID ? accountId : "");
   return {
     accountId,
     name: pick(account.name, channel.name),
     enabled: account.enabled ?? channel.enabled ?? true,
-    pageId: pick(account.pageId, channel.pageId) ?? "",
+    pageId,
     pageAccessToken,
     appId,
     appSecret,
@@ -57,10 +62,14 @@ function resolveMessengerAccount(params) {
     dmPolicy: pick(account.dmPolicy, channel.dmPolicy) ?? "open",
     allowFrom: account.allowFrom ?? channel.allowFrom ?? ["*"],
     historyLimit: account.historyLimit ?? channel.historyLimit ?? 50,
+    transport,
+    relayUrl,
+    instagramId: pick(account.instagramId, channel.instagramId) ?? "",
     config: { ...channel, ...account }
   };
 }
 function isAccountConfigured(account) {
+  if (account.transport === "relay") return Boolean(account.pageId);
   return Boolean(account.pageAccessToken && account.verifyToken);
 }
 function isSenderAllowed(account, senderId) {
@@ -260,14 +269,50 @@ async function clearPageCredential(accountId) {
   } catch {
   }
 }
+function relayPath() {
+  return join(stateDir(), "credentials", CHANNEL_ID, "relay.json");
+}
+function relayCursorPath() {
+  return join(stateDir(), "credentials", CHANNEL_ID, "relay-cursor.json");
+}
+async function loadRelayCredential(env = process.env) {
+  const fromEnv = (env.FB_MESSENGER_RELAY_KEY ?? "").trim();
+  if (fromEnv) return { botKey: fromEnv, url: (env.FB_MESSENGER_RELAY_URL ?? "").trim() || void 0 };
+  try {
+    const parsed = JSON.parse(await fs.readFile(relayPath(), "utf8"));
+    if (parsed?.botKey) return parsed;
+  } catch {
+  }
+  return null;
+}
+async function loadRelayCursor() {
+  try {
+    const parsed = JSON.parse(await fs.readFile(relayCursorPath(), "utf8"));
+    return typeof parsed?.cursor === "number" ? parsed.cursor : null;
+  } catch {
+    return null;
+  }
+}
+async function saveRelayCursor(cursor) {
+  const path = relayCursorPath();
+  try {
+    await fs.mkdir(dirname(path), { recursive: true });
+    await fs.writeFile(path, JSON.stringify({ cursor, savedAt: (/* @__PURE__ */ new Date()).toISOString() }), "utf8");
+  } catch {
+  }
+}
 
 // src/registry.ts
+function getDispatchContextForAccount(accountId) {
+  for (const ctx of byPageId.values()) if (ctx.account.accountId === accountId) return ctx;
+  return void 0;
+}
 var byPageId = /* @__PURE__ */ new Map();
 function registerDispatchContext(ctx) {
   const pageId = ctx.account.pageId?.trim();
   if (!pageId) {
     ctx.log?.warn?.(
-      `[fb-messenger] account ${ctx.account.accountId} has no pageId \u2014 webhook routing disabled for it`
+      `[fb-messenger] account ${ctx.account.accountId} has no pageId - webhook routing disabled for it`
     );
     return () => {
     };
@@ -295,6 +340,330 @@ function getSoleContext() {
   return byPageId.size === 1 ? [...byPageId.values()][0] : void 0;
 }
 
+// src/inbound.ts
+var SEEN_LIMIT = 5e3;
+var seenMids = /* @__PURE__ */ new Set();
+function rememberMid(mid) {
+  if (seenMids.has(mid)) return false;
+  seenMids.add(mid);
+  if (seenMids.size > SEEN_LIMIT) {
+    const first = seenMids.values().next().value;
+    if (first !== void 0) seenMids.delete(first);
+  }
+  return true;
+}
+var ATTACHMENT_LABEL = {
+  image: "\u1EA2nh",
+  video: "Video",
+  audio: "\xC2m thanh",
+  file: "T\u1EC7p",
+  location: "V\u1ECB tr\xED",
+  fallback: "Li\xEAn k\u1EBFt",
+  template: "M\u1EABu",
+  reel: "Reel",
+  story_mention: "Nh\u1EAFc trong story",
+  ig_reel: "Reel"
+};
+function extractBody(event) {
+  if (event.message?.is_echo) return void 0;
+  if (event.message?.is_deleted) return void 0;
+  const parts = [];
+  const text = event.message?.text?.trim();
+  if (text) parts.push(text);
+  else {
+    const qr = event.message?.quick_reply?.payload?.trim();
+    if (qr) parts.push(qr);
+  }
+  const seenUrls = /* @__PURE__ */ new Set();
+  for (const a of event.message?.attachments ?? []) {
+    const type = (a.type ?? "").toLowerCase();
+    if (!type || ["template", "unsupported_type", "ephemeral"].includes(type)) continue;
+    const url = a.payload?.url?.trim();
+    if (url && seenUrls.has(url)) continue;
+    if (url) seenUrls.add(url);
+    const label = ATTACHMENT_LABEL[type] ?? type;
+    parts.push(url ? `[${label}] ${url}` : `[${label}]`);
+  }
+  if (!parts.length) {
+    const pb = event.postback?.payload?.trim() || event.postback?.title?.trim();
+    if (pb) parts.push(pb);
+  }
+  return parts.length ? parts.join("\n") : void 0;
+}
+async function dispatchMessengerEvent(ctx, event, options = {}) {
+  const { account, cfg, channelRuntime, sender, log } = ctx;
+  const platform = options.platform ?? "messenger";
+  const senderId = event.sender?.id?.trim();
+  if (!senderId) return;
+  const mid = event.message?.mid || event.postback?.mid;
+  if (mid && !rememberMid(`${account.pageId}:${mid}`)) {
+    log?.info?.(`[fb-messenger] duplicate ${mid} ignored`);
+    return;
+  }
+  const text = extractBody(event);
+  if (!text) return;
+  if (!isSenderAllowed(account, senderId)) {
+    log?.info?.(`[fb-messenger] drop message from ${senderId} (dmPolicy=${account.dmPolicy})`);
+    return;
+  }
+  void sender.senderAction(senderId, "mark_seen", platform).catch(() => {
+  });
+  void sender.senderAction(senderId, "typing_on", platform).catch(() => {
+  });
+  const profile = await sender.getProfile(senderId, platform).catch(() => null);
+  const senderName = profile?.name;
+  const messageId = mid || `${event.timestamp ?? Date.now()}`;
+  const label = `${senderName || senderId}${platform === "instagram" ? " (Instagram)" : ""}`;
+  const peerId = platform === "instagram" ? `ig:${senderId}` : senderId;
+  const route = channelRuntime.routing.resolveAgentRoute({
+    cfg,
+    channel: CHANNEL_ID,
+    accountId: account.accountId,
+    peer: { kind: "direct", id: peerId }
+  });
+  const cfgSession = cfg.session;
+  const storePath = channelRuntime.session.resolveStorePath(cfgSession?.store, {
+    agentId: route.agentId
+  });
+  const ctxPayload = channelRuntime.inbound.buildContext({
+    channel: CHANNEL_ID,
+    accountId: account.accountId,
+    messageId,
+    timestamp: event.timestamp,
+    from: `${CHANNEL_ID}:${peerId}`,
+    sender: { id: peerId, name: senderName },
+    conversation: { kind: "direct", id: peerId, label },
+    route: {
+      agentId: route.agentId,
+      accountId: route.accountId ?? account.accountId,
+      routeSessionKey: route.sessionKey
+    },
+    reply: {
+      to: `${CHANNEL_ID}:${peerId}`,
+      originatingTo: `${CHANNEL_ID}:${peerId}`
+    },
+    message: {
+      body: text,
+      bodyForAgent: text,
+      rawBody: text,
+      commandBody: text
+    }
+  });
+  const deliver = async (payload) => {
+    if (payload.mediaUrl) {
+      const r = await sender.sendMedia(senderId, payload.mediaUrl, guessMediaType(payload.mediaUrl), platform);
+      if (!r.ok) log?.error?.(`[fb-messenger] media send failed: ${r.error}`);
+    }
+    const replyText = payload.text?.trim();
+    if (replyText) {
+      const r = await sender.sendText(senderId, replyText, platform);
+      if (!r.ok) log?.error?.(`[fb-messenger] text send failed: ${describeSendError(r)}`);
+      return r;
+    }
+    return { ok: true };
+  };
+  try {
+    await channelRuntime.inbound.dispatchReply({
+      channel: CHANNEL_ID,
+      accountId: account.accountId,
+      cfg,
+      agentId: route.agentId,
+      routeSessionKey: route.sessionKey,
+      storePath,
+      ctxPayload,
+      recordInboundSession: channelRuntime.session.recordInboundSession,
+      dispatchReplyWithBufferedBlockDispatcher: channelRuntime.reply.dispatchReplyWithBufferedBlockDispatcher,
+      delivery: { deliver }
+    });
+  } catch (err) {
+    log?.error?.(`[fb-messenger] dispatch failed for ${senderId}: ${String(err)}`);
+  } finally {
+    void sender.senderAction(senderId, "typing_off", platform).catch(() => {
+    });
+  }
+}
+function guessMediaType(url) {
+  const ext = (url.split("?")[0] ?? "").toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "";
+  if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) return "image";
+  if (["mp4", "mov", "m4v", "webm"].includes(ext)) return "video";
+  if (["mp3", "m4a", "wav", "ogg", "aac"].includes(ext)) return "audio";
+  return ext ? "file" : "image";
+}
+function describeSendError(r) {
+  if (r.code === 409) return `page disconnected from Connect - owner must connect again (${r.error})`;
+  if (r.code === 10 && r.subcode === 2018278) return `outside the 24h messaging window (${r.error})`;
+  if (r.code === 190) return `page token invalid/expired (${r.error})`;
+  if (r.code === 613 || r.code === 4) return `rate limited by Meta (${r.error})`;
+  if (r.code === 551) return `recipient unavailable or blocked the Page (${r.error})`;
+  return r.error ?? "unknown error";
+}
+
+// src/relay.ts
+var loop = null;
+function acquireRelayLoop(opts) {
+  const key = `${opts.url}|${opts.botKey}`;
+  if (loop && loop.key === key && !loop.abort.signal.aborted) {
+    loop.refs += 1;
+  } else {
+    if (loop) loop.abort.abort();
+    const abort = new AbortController();
+    const state = { key, abort, refs: 1, done: Promise.resolve() };
+    state.done = runLoop(opts, abort.signal).catch((e) => opts.log?.error?.(`[fb-messenger] relay loop crashed: ${String(e)}`));
+    loop = state;
+  }
+  const mine = loop;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    mine.refs -= 1;
+    if (mine.refs <= 0) {
+      mine.abort.abort();
+      if (loop === mine) loop = null;
+    }
+  };
+}
+var sleep = (ms, signal) => new Promise((resolve) => {
+  if (signal.aborted) return resolve();
+  const t = setTimeout(resolve, ms);
+  signal.addEventListener("abort", () => {
+    clearTimeout(t);
+    resolve();
+  }, { once: true });
+});
+async function runLoop(opts, signal) {
+  const f = opts.fetchImpl ?? fetch;
+  const wait = Math.min(25, Math.max(1, opts.waitSec ?? 25));
+  const headers = { authorization: `Bearer ${opts.botKey}` };
+  let cursor = await loadRelayCursor();
+  let backoffMs = 2e3;
+  opts.log?.info?.(`[fb-messenger] relay: polling ${opts.url} (cursor ${cursor ?? "fresh"})`);
+  while (!signal.aborted) {
+    const since = cursor === null ? "" : `since=${cursor}&wait=${wait}`;
+    let res;
+    try {
+      res = await f(`${opts.url}/api/events${since ? `?${since}` : ""}`, { headers, signal });
+    } catch (e) {
+      if (signal.aborted) return;
+      opts.log?.warn?.(`[fb-messenger] relay: ${String(e)} - retry in ${backoffMs / 1e3}s`);
+      await sleep(backoffMs, signal);
+      backoffMs = Math.min(backoffMs * 2, 6e4);
+      continue;
+    }
+    if (res.status === 401) {
+      opts.log?.error?.("[fb-messenger] relay: botKey rejected by Connect (401) - open the bot settings and connect the Facebook Page again");
+      await sleep(6e4, signal);
+      continue;
+    }
+    if (!res.ok) {
+      opts.log?.warn?.(`[fb-messenger] relay: HTTP ${res.status} - retry in ${backoffMs / 1e3}s`);
+      await sleep(backoffMs, signal);
+      backoffMs = Math.min(backoffMs * 2, 6e4);
+      continue;
+    }
+    backoffMs = 2e3;
+    const body = await res.json().catch(() => ({}));
+    const events = Array.isArray(body.events) ? body.events : [];
+    if (typeof body.cursor === "number" && body.cursor !== cursor) {
+      cursor = body.cursor;
+      await saveRelayCursor(cursor);
+    }
+    for (const ev of events) {
+      try {
+        await handleRelayEvent(ev, opts);
+      } catch (e) {
+        opts.log?.error?.(`[fb-messenger] relay: event ${ev.id} failed: ${String(e)}`);
+      }
+    }
+    opts.onCycle?.(events);
+    if (!hasRegisteredAccounts()) await sleep(1e3, signal);
+  }
+}
+async function handleRelayEvent(ev, opts) {
+  if (!ev.pageId) return;
+  const ctx = getDispatchContextForPage(ev.pageId);
+  if (!ctx) {
+    opts.log?.info?.(`[fb-messenger] relay: event for page ${ev.pageId} but no account registered for it`);
+    return;
+  }
+  switch (ev.kind) {
+    case "message":
+    case "postback": {
+      const event = ev.payload;
+      if (!event || typeof event !== "object" || !event.sender) return;
+      await dispatchMessengerEvent(ctx, event, { platform: ev.object === "instagram" ? "instagram" : "messenger" });
+      return;
+    }
+    case "disconnected":
+      ctx.log?.warn?.(`[fb-messenger] page ${ev.pageId} was disconnected from Connect (${ev.text || "deauthorize"}) - replies will fail until the owner connects again`);
+      ctx.setStatus?.({ accountId: ctx.account.accountId, enabled: true, configured: true, connected: false, reason: ev.text || "disconnected" });
+      return;
+    case "token_invalid":
+      ctx.log?.warn?.(`[fb-messenger] page ${ev.pageId}: Page token invalid at Connect - owner must connect again`);
+      return;
+    case "sent":
+      ctx.log?.info?.(`[fb-messenger] echo on page ${ev.pageId} to ${ev.senderId ?? "?"}${ev.text ? `: ${ev.text.slice(0, 60)}` : ""}`);
+      return;
+    default:
+      return;
+  }
+}
+
+// src/sender.ts
+var fromGraph = (r) => ({ ok: r.ok, messageId: r.messageId, error: r.error });
+function createGraphSender(account) {
+  const opts = { pageAccessToken: account.pageAccessToken, graphApiVersion: account.graphApiVersion };
+  return {
+    sendText: async (to, text) => fromGraph(await sendMessengerText(to, text, opts)),
+    sendMedia: async (to, url, type) => fromGraph(await sendMessengerMedia(to, url, { ...opts, mediaType: type })),
+    senderAction: async (to, action) => fromGraph(await sendSenderAction(to, action, opts)),
+    getProfile: (psid) => getUserProfile(psid, opts)
+  };
+}
+async function relayCall(opts, path, init) {
+  const f = opts.fetchImpl ?? fetch;
+  const res = await f(`${opts.url}${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${opts.botKey}`, "content-type": "application/json", ...init.headers ?? {} }
+  });
+  const json = await res.json().catch(() => ({}));
+  return { status: res.status, json };
+}
+function relayResult(status, json) {
+  if (json.ok === true) {
+    const sent = Array.isArray(json.sent) ? json.sent : [];
+    return { ok: true, messageId: sent[sent.length - 1]?.messageId };
+  }
+  const err = json.error;
+  if (typeof err === "string") return { ok: false, error: err, code: status === 409 ? 409 : null };
+  return { ok: false, error: err?.message || `Connect HTTP ${status}`, code: err?.code ?? (status === 409 ? 409 : null), subcode: err?.subcode ?? null };
+}
+function createRelaySender(opts) {
+  const post = (body) => relayCall(opts, `/api/pages/${encodeURIComponent(opts.pageId)}/messages`, { method: "POST", body: JSON.stringify(body) }).then(({ status, json }) => relayResult(status, json)).catch((e) => ({ ok: false, error: String(e), code: null }));
+  return {
+    sendText: async (to, text, platform) => {
+      let last = { ok: true };
+      for (const chunk of chunkMessengerText(text, MESSENGER_TEXT_LIMIT)) {
+        last = await post({ recipientId: to, text: chunk, platform });
+        if (!last.ok) return last;
+      }
+      return last;
+    },
+    sendMedia: (to, url, type, platform) => post({ recipientId: to, attachments: [{ type, url }], platform }),
+    senderAction: (to, action, platform) => post({ recipientId: to, senderAction: action, platform }),
+    getProfile: async (psid, platform) => {
+      try {
+        const { status, json } = await relayCall(opts, `/api/pages/${encodeURIComponent(opts.pageId)}/contacts/${encodeURIComponent(psid)}?platform=${platform ?? "messenger"}`, { method: "GET" });
+        if (status !== 200 || json.ok !== true) return null;
+        const c = json.contact;
+        return { id: c?.id ?? psid, name: c?.name || void 0 };
+      } catch {
+        return null;
+      }
+    }
+  };
+}
+
 // src/channel.ts
 var messengerMeta = {
   id: CHANNEL_ID,
@@ -302,7 +671,7 @@ var messengerMeta = {
   selectionLabel: "Facebook (Messenger)",
   docsPath: "/channels/fb-messenger",
   docsLabel: "fb-messenger",
-  blurb: "Facebook Page Messenger via webhook + Graph API.",
+  blurb: "Facebook Page Messenger + Instagram via MonkeyTech Connect relay or direct webhook.",
   aliases: ["fb", "messenger"],
   order: 90,
   quickstartAllowFrom: false
@@ -336,7 +705,10 @@ var messengerConfigAdapter = createHybridChannelConfigAdapter({
     "allowFrom",
     "historyLimit",
     "messagePrefix",
-    "responsePrefix"
+    "responsePrefix",
+    "transport",
+    "relayUrl",
+    "instagramId"
   ],
   resolveAllowFrom: (account) => account.allowFrom,
   formatAllowFrom: (allowFrom) => formatTrimmedAllowFromEntries(allowFrom)
@@ -360,6 +732,9 @@ var messengerSetupAdapter = {
       ...input.appId ? { appId: input.appId } : {},
       ...input.appSecret ? { appSecret: input.appSecret } : {},
       ...input.verifyToken ? { verifyToken: input.verifyToken } : {},
+      ...input.transport ? { transport: input.transport } : {},
+      ...input.relayUrl ? { relayUrl: input.relayUrl } : {},
+      ...input.instagramId ? { instagramId: input.instagramId } : {},
       dmPolicy: existing.dmPolicy ?? "open",
       allowFrom: existing.allowFrom ?? ["*"]
     };
@@ -372,15 +747,38 @@ var messengerGateway = {
     if (!account.enabled) return;
     if (!isAccountConfigured(account)) {
       ctx.log?.warn?.(
-        `[fb-messenger] account ${account.accountId} not configured (need pageAccessToken + verifyToken) \u2014 set FB_MESSENGER_* env or channels.fb-messenger.*`
+        `[fb-messenger] account ${account.accountId} not configured (need pageAccessToken + verifyToken) - set FB_MESSENGER_* env or channels.fb-messenger.*`
       );
       return;
     }
     if (!ctx.channelRuntime) {
-      ctx.log?.warn?.("[fb-messenger] channelRuntime unavailable \u2014 cannot dispatch to agent");
+      ctx.log?.warn?.("[fb-messenger] channelRuntime unavailable - cannot dispatch to agent");
       return;
     }
     const channelRuntime = ctx.channelRuntime;
+    if (account.transport === "relay") {
+      const relay = await loadRelayCredential();
+      if (!relay?.botKey) {
+        ctx.log?.warn?.(
+          `[fb-messenger] account ${account.accountId}: relay mode but no botKey - open the bot settings and click "Connect Facebook Page" (writes credentials/fb-messenger/relay.json)`
+        );
+        ctx.setStatus?.({ accountId: account.accountId, enabled: true, configured: false, reason: "no relay botKey" });
+        return;
+      }
+      const relayUrl = (relay.url || account.relayUrl).replace(/\/+$/, "");
+      const sender = createRelaySender({ url: relayUrl, botKey: relay.botKey, pageId: account.pageId });
+      const dispose2 = registerDispatchContext({ account, cfg: ctx.cfg, channelRuntime, sender, log: ctx.log, setStatus: ctx.setStatus });
+      const release = acquireRelayLoop({ url: relayUrl, botKey: relay.botKey, log: ctx.log });
+      ctx.setStatus?.({ accountId: account.accountId, name: account.name, enabled: true, configured: true, transport: "relay" });
+      ctx.log?.info?.(`[fb-messenger] account ${account.accountId} listening via relay ${relayUrl} (page ${account.pageId}${account.instagramId ? `, instagram ${account.instagramId}` : ""})`);
+      await new Promise((resolve) => {
+        if (ctx.abortSignal.aborted) return resolve();
+        ctx.abortSignal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      dispose2();
+      release();
+      return;
+    }
     let resolvedFromPersist = false;
     const persisted = await loadPageCredential(account.accountId);
     if (persisted?.pageAccessToken && await validateToken(persisted.pageAccessToken, account.graphApiVersion)) {
@@ -390,7 +788,7 @@ var messengerGateway = {
       ctx.log?.info?.(`[fb-messenger] using saved permanent page token (page ${account.pageId || "?"})`);
     } else if (persisted) {
       await clearPageCredential(account.accountId);
-      ctx.log?.warn?.("[fb-messenger] saved page token invalid \u2014 re-deriving from configured token");
+      ctx.log?.warn?.("[fb-messenger] saved page token invalid - re-deriving from configured token");
     }
     if (!resolvedFromPersist) {
       const resolved = await resolvePermanentPageContext(account.pageAccessToken, {
@@ -416,12 +814,12 @@ var messengerGateway = {
           ctx.log?.info?.(`[fb-messenger] derived & saved permanent page token (page ${resolved.pageId})`);
         } else {
           ctx.log?.warn?.(
-            "[fb-messenger] derived a Page token but it is NOT permanent \u2014 set FB_MESSENGER_APP_ID + FB_MESSENGER_APP_SECRET for a never-expiring token"
+            "[fb-messenger] derived a Page token but it is NOT permanent - set FB_MESSENGER_APP_ID + FB_MESSENGER_APP_SECRET for a never-expiring token"
           );
         }
       } else {
         ctx.log?.warn?.(
-          "[fb-messenger] could not resolve page from token \u2014 it may be expired/invalid. Re-enter the token (with App ID + App Secret) when editing the bot."
+          "[fb-messenger] could not resolve page from token - it may be expired/invalid. Re-enter the token (with App ID + App Secret) when editing the bot."
         );
       }
     }
@@ -438,7 +836,9 @@ var messengerGateway = {
       account,
       cfg: ctx.cfg,
       channelRuntime,
-      log: ctx.log
+      sender: createGraphSender(account),
+      log: ctx.log,
+      setStatus: ctx.setStatus
     });
     ctx.setStatus?.({
       accountId: account.accountId,
@@ -447,13 +847,57 @@ var messengerGateway = {
       configured: true
     });
     ctx.log?.info?.(
-      `[fb-messenger] account ${account.accountId} listening (page ${account.pageId || "?"}) \u2014 webhook /webhooks/messenger`
+      `[fb-messenger] account ${account.accountId} listening (page ${account.pageId || "?"}) - webhook /webhooks/messenger`
     );
     await new Promise((resolve) => {
       if (ctx.abortSignal.aborted) return resolve();
       ctx.abortSignal.addEventListener("abort", () => resolve(), { once: true });
     });
     dispose();
+  }
+};
+function parseOutboundTarget(raw) {
+  let id = String(raw ?? "").trim();
+  if (id.startsWith(`${CHANNEL_ID}:`)) id = id.slice(CHANNEL_ID.length + 1);
+  if (id.startsWith("ig:")) return { id: id.slice(3), platform: "instagram" };
+  return { id, platform: "messenger" };
+}
+function outboundContext(accountId) {
+  return getDispatchContextForAccount(normalizeAccountId(accountId));
+}
+var notRunning = (accountId) => ({
+  channel: CHANNEL_ID,
+  ok: false,
+  messageId: "",
+  error: new Error(`[fb-messenger] account ${normalizeAccountId(accountId)} is not running (no sender registered)`)
+});
+var messengerOutbound = {
+  deliveryMode: "direct",
+  chunker: (text, limit) => chunkMessengerText(text, limit > 0 ? limit : void 0),
+  chunkerMode: "markdown",
+  textChunkLimit: 2e3,
+  sendText: async ({ to, text, accountId }) => {
+    const ctx = outboundContext(accountId);
+    if (!ctx) return notRunning(accountId);
+    const target = parseOutboundTarget(to);
+    const r = await ctx.sender.sendText(target.id, text ?? "", target.platform);
+    return { channel: CHANNEL_ID, ok: r.ok, messageId: r.messageId ?? "", error: r.ok ? void 0 : new Error(describeSendError(r)) };
+  },
+  sendMedia: async ({ to, text, mediaUrl, accountId }) => {
+    const ctx = outboundContext(accountId);
+    if (!ctx) return notRunning(accountId);
+    const target = parseOutboundTarget(to);
+    let last = { ok: true };
+    if (mediaUrl) {
+      if (!/^https:\/\//.test(mediaUrl)) {
+        return { channel: CHANNEL_ID, ok: false, messageId: "", error: new Error("[fb-messenger] Messenger only accepts media by public https URL; local files are not supported yet") };
+      }
+      last = await ctx.sender.sendMedia(target.id, mediaUrl, guessMediaType(mediaUrl), target.platform);
+      if (!last.ok) return { channel: CHANNEL_ID, ok: false, messageId: "", error: new Error(describeSendError(last)) };
+    }
+    const caption = (text ?? "").trim();
+    if (caption) last = await ctx.sender.sendText(target.id, caption, target.platform);
+    return { channel: CHANNEL_ID, ok: last.ok, messageId: last.messageId ?? "", error: last.ok ? void 0 : new Error(describeSendError(last)) };
   }
 };
 var base = {
@@ -463,7 +907,8 @@ var base = {
   reload: { configPrefixes: [`channels.${CHANNEL_ID}`] },
   config: messengerConfigAdapter,
   setup: messengerSetupAdapter,
-  gateway: messengerGateway
+  gateway: messengerGateway,
+  outbound: messengerOutbound
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 };
 var messengerPlugin = createChatChannelPlugin({
@@ -481,107 +926,6 @@ var messengerPlugin = createChatChannelPlugin({
 
 // src/webhook.ts
 import { createHmac, timingSafeEqual } from "crypto";
-
-// src/inbound.ts
-function extractText(event) {
-  if (event.message?.is_echo) return void 0;
-  const fromMessage = event.message?.text?.trim();
-  if (fromMessage) return fromMessage;
-  const fromQuickReply = event.message?.quick_reply?.payload?.trim();
-  if (fromQuickReply) return fromQuickReply;
-  const fromPostback = event.postback?.payload?.trim() || event.postback?.title?.trim();
-  return fromPostback || void 0;
-}
-async function dispatchMessengerEvent(ctx, event) {
-  const { account, cfg, channelRuntime, log } = ctx;
-  const senderId = event.sender?.id?.trim();
-  if (!senderId) return;
-  const text = extractText(event);
-  if (!text) return;
-  if (!isSenderAllowed(account, senderId)) {
-    log?.info?.(`[fb-messenger] drop message from ${senderId} (dmPolicy=${account.dmPolicy})`);
-    return;
-  }
-  const sendOpts = {
-    pageAccessToken: account.pageAccessToken,
-    graphApiVersion: account.graphApiVersion
-  };
-  void sendSenderAction(senderId, "mark_seen", sendOpts).catch(() => {
-  });
-  void sendSenderAction(senderId, "typing_on", sendOpts).catch(() => {
-  });
-  const profile = await getUserProfile(senderId, sendOpts).catch(() => null);
-  const senderName = profile?.name;
-  const messageId = event.message?.mid || event.postback?.mid || `${event.timestamp ?? ""}`;
-  const route = channelRuntime.routing.resolveAgentRoute({
-    cfg,
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
-    peer: { kind: "direct", id: senderId }
-  });
-  const cfgSession = cfg.session;
-  const storePath = channelRuntime.session.resolveStorePath(cfgSession?.store, {
-    agentId: route.agentId
-  });
-  const ctxPayload = channelRuntime.inbound.buildContext({
-    channel: CHANNEL_ID,
-    accountId: account.accountId,
-    messageId,
-    timestamp: event.timestamp,
-    from: `${CHANNEL_ID}:${senderId}`,
-    sender: { id: senderId, name: senderName },
-    conversation: { kind: "direct", id: senderId, label: senderName || senderId },
-    route: {
-      agentId: route.agentId,
-      accountId: route.accountId ?? account.accountId,
-      routeSessionKey: route.sessionKey
-    },
-    reply: {
-      to: `${CHANNEL_ID}:${senderId}`,
-      originatingTo: `${CHANNEL_ID}:${senderId}`
-    },
-    message: {
-      body: text,
-      bodyForAgent: text,
-      rawBody: text,
-      commandBody: text
-    }
-  });
-  const deliver = async (payload) => {
-    if (payload.mediaUrl) {
-      const r = await sendMessengerMedia(senderId, payload.mediaUrl, sendOpts);
-      if (!r.ok) log?.error?.(`[fb-messenger] media send failed: ${r.error}`);
-    }
-    const replyText = payload.text?.trim();
-    if (replyText) {
-      const r = await sendMessengerText(senderId, replyText, sendOpts);
-      if (!r.ok) log?.error?.(`[fb-messenger] text send failed: ${r.error}`);
-      return r;
-    }
-    return { ok: true };
-  };
-  try {
-    await channelRuntime.inbound.dispatchReply({
-      channel: CHANNEL_ID,
-      accountId: account.accountId,
-      cfg,
-      agentId: route.agentId,
-      routeSessionKey: route.sessionKey,
-      storePath,
-      ctxPayload,
-      recordInboundSession: channelRuntime.session.recordInboundSession,
-      dispatchReplyWithBufferedBlockDispatcher: channelRuntime.reply.dispatchReplyWithBufferedBlockDispatcher,
-      delivery: { deliver }
-    });
-  } catch (err) {
-    log?.error?.(`[fb-messenger] dispatch failed for ${senderId}: ${String(err)}`);
-  } finally {
-    void sendSenderAction(senderId, "typing_off", sendOpts).catch(() => {
-    });
-  }
-}
-
-// src/webhook.ts
 var WEBHOOK_PATH = "/webhooks/messenger";
 function readRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -592,7 +936,7 @@ function readRawBody(req) {
   });
 }
 function verifySignature(rawBody, header, appSecret) {
-  if (!appSecret) return true;
+  if (!appSecret) return false;
   if (!header || !header.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", appSecret).update(rawBody).digest("hex");
   const provided = header.slice("sha256=".length);
@@ -638,12 +982,13 @@ async function handleMessengerWebhook(req, res) {
     for (const entry of body.entry) {
       const ctx = getDispatchContextForPage(entry.id ?? "") ?? getSoleContext();
       if (!ctx) continue;
+      if (ctx.account.transport !== "webhook") continue;
       if (!verifySignature(rawBody, signature, ctx.account.appSecret)) {
-        ctx.log?.warn?.(`[fb-messenger] signature mismatch for page ${entry.id} \u2014 dropping`);
+        ctx.log?.warn?.(`[fb-messenger] signature mismatch for page ${entry.id} (or no App Secret configured) - dropping`);
         continue;
       }
       for (const event of entry.messaging ?? []) {
-        void dispatchMessengerEvent(ctx, event).catch((err) => {
+        void dispatchMessengerEvent(ctx, event, { platform: "messenger" }).catch((err) => {
           ctx.log?.error?.(`[fb-messenger] event handling error: ${String(err)}`);
         });
       }

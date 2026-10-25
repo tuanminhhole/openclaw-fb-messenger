@@ -1,9 +1,9 @@
 {
   "id": "fb-messenger",
   "name": "Facebook Messenger",
-  "description": "OpenClaw Facebook Messenger channel plugin via webhook + Graph API.",
+  "description": "OpenClaw Facebook Messenger + Instagram channel plugin: relay via MonkeyTech Connect (no token on the bot) or direct webhook + Graph API.",
   "icon": "https://cdn.jsdelivr.net/gh/tuanminhhole/openclaw-fb-messenger@main/logo.svg",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "activation": {
     "onStartup": false
   },
@@ -15,7 +15,8 @@
       "FB_MESSENGER_PAGE_ACCESS_TOKEN",
       "FB_MESSENGER_APP_ID",
       "FB_MESSENGER_APP_SECRET",
-      "FB_MESSENGER_VERIFY_TOKEN"
+      "FB_MESSENGER_VERIFY_TOKEN",
+      "FB_MESSENGER_RELAY_KEY"
     ]
   },
   "setup": {
@@ -27,7 +28,8 @@
           "FB_MESSENGER_PAGE_ACCESS_TOKEN",
           "FB_MESSENGER_APP_ID",
           "FB_MESSENGER_APP_SECRET",
-          "FB_MESSENGER_VERIFY_TOKEN"
+          "FB_MESSENGER_VERIFY_TOKEN",
+          "FB_MESSENGER_RELAY_KEY"
         ]
       }
     ]
@@ -74,7 +76,7 @@
           },
           "graphApiVersion": {
             "type": "string",
-            "description": "Graph API version. Defaults to v21.0."
+            "description": "Graph API version. Defaults to v24.0."
           },
           "dmPolicy": {
             "type": "string",
@@ -175,9 +177,41 @@
                 },
                 "responsePrefix": {
                   "type": "string"
+                },
+                "transport": {
+                  "type": "string",
+                  "enum": [
+                    "webhook",
+                    "relay"
+                  ],
+                  "description": "relay: long-poll MonkeyTech Connect, bot holds no Page token (default when no pageAccessToken). webhook: Meta calls this gateway directly (needs public HTTPS + App Secret)."
+                },
+                "relayUrl": {
+                  "type": "string",
+                  "description": "Connect base URL. Defaults to https://connect.monkeytech.vn."
+                },
+                "instagramId": {
+                  "type": "string",
+                  "description": "Instagram professional account linked to the Page (informational; Connect routes Instagram events by Page)."
                 }
               }
             }
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "webhook",
+              "relay"
+            ],
+            "description": "relay: long-poll MonkeyTech Connect, bot holds no Page token (default when no pageAccessToken). webhook: Meta calls this gateway directly (needs public HTTPS + App Secret)."
+          },
+          "relayUrl": {
+            "type": "string",
+            "description": "Connect base URL. Defaults to https://connect.monkeytech.vn."
+          },
+          "instagramId": {
+            "type": "string",
+            "description": "Instagram professional account linked to the Page (informational; Connect routes Instagram events by Page)."
           }
         }
       }

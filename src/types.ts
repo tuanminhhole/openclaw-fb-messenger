@@ -15,13 +15,18 @@ export interface MessengerMessagingEvent {
     mid?: string;
     text?: string;
     is_echo?: boolean;
+    is_deleted?: boolean;
+    is_unsupported?: boolean;
     quick_reply?: { payload?: string };
-    attachments?: Array<{ type?: string; payload?: { url?: string } }>;
+    attachments?: Array<{ type?: string; payload?: { url?: string; title?: string; sticker_id?: number } }>;
   };
   postback?: { title?: string; payload?: string; mid?: string };
+  /** Instagram: webhook payload giong Messenger, Connect gan object = "instagram". */
+  read?: unknown;
+  delivery?: unknown;
 }
 
-/** One webhook `entry` — `id` is the Page ID that received the events. */
+/** One webhook `entry` - `id` is the Page ID that received the events. */
 export interface MessengerWebhookEntry {
   id: string;
   time?: number;
