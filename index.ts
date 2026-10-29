@@ -1,6 +1,7 @@
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core";
 import { messengerPlugin } from "./src/channel.js";
 import { handleMessengerWebhook, WEBHOOK_PATH } from "./src/webhook.js";
+import { fanpageTools } from "./src/tools.js";
 
 /**
  * Full channel entry. `defineChannelPluginEntry` registers the `fb-messenger`
@@ -20,5 +21,7 @@ export default defineChannelPluginEntry({
       match: "exact",
       handler: handleMessengerWebhook,
     });
+    // Tool Fanpage (dang bai, Reels, chuyen cho nguoi) - chi chay voi Trang ket noi qua MonkeyTech Connect.
+    for (const tool of fanpageTools) (api as { registerTool: (t: unknown) => void }).registerTool(tool);
   },
 });

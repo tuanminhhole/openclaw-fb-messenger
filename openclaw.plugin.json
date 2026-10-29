@@ -224,5 +224,12 @@
         }
       }
     }
+  },
+  "contracts": {
+    "tools": [
+      "fanpage_post",
+      "fanpage_reel",
+      "fanpage_handover"
+    ]
   }
 }

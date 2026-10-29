@@ -21,6 +21,8 @@ export interface MessengerDispatchContext {
     error?: (msg: string) => void;
   };
   setStatus?: (s: unknown) => void;
+  /** Chi co o transport relay: de goi them API cua Connect (binh luan, dang bai, chuyen cho nguoi). */
+  relay?: { url: string; botKey: string };
 }
 
 /** Tim context theo accountId (outbound adapter nhan accountId, khong phai pageId). */
@@ -61,6 +63,11 @@ export function findContextByVerifyToken(token: string): MessengerDispatchContex
 
 export function hasRegisteredAccounts(): boolean {
   return byPageId.size > 0;
+}
+
+/** Moi account dang chay (tool dang bai chon Trang theo pageId hoac lay Trang duy nhat). */
+export function listDispatchContexts(): MessengerDispatchContext[] {
+  return [...byPageId.values()];
 }
 
 /** The sole registered context, if exactly one - used as a forgiving fallback. */
