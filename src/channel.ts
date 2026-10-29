@@ -152,7 +152,7 @@ const messengerGateway = {
       }
       const relayUrl = (relay.url || account.relayUrl).replace(/\/+$/, "");
       const sender = createRelaySender({ url: relayUrl, botKey: relay.botKey, pageId: account.pageId });
-      const dispose = registerDispatchContext({ account, cfg: ctx.cfg, channelRuntime, sender, log: ctx.log, setStatus: ctx.setStatus });
+      const dispose = registerDispatchContext({ account, cfg: ctx.cfg, channelRuntime, sender, log: ctx.log, setStatus: ctx.setStatus, relay: { url: relayUrl, botKey: relay.botKey } });
       const release = acquireRelayLoop({ url: relayUrl, botKey: relay.botKey, log: ctx.log });
       ctx.setStatus?.({ accountId: account.accountId, name: account.name, enabled: true, configured: true, transport: "relay" });
       ctx.log?.info?.(`[fb-messenger] account ${account.accountId} listening via relay ${relayUrl} (page ${account.pageId}${account.instagramId ? `, instagram ${account.instagramId}` : ""})`);

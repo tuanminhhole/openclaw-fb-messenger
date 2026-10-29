@@ -1,5 +1,6 @@
 import { CHANNEL_ID, isSenderAllowed } from "./config.js";
 import type { MessengerDispatchContext } from "./registry.js";
+import { pageSettings, replyComment } from "./connect-api.js";
 import type { MessengerPlatform } from "./sender.js";
 import type { MessengerMessagingEvent, OutboundReplyPayload } from "./types.js";
 
@@ -83,6 +84,7 @@ export async function dispatchMessengerEvent(
 
   const text = extractBody(event);
   if (!text) return;
+  lastCustomer.set(account.pageId, { id: senderId, platform });
 
   if (!isSenderAllowed(account, senderId)) {
     log?.info?.(`[fb-messenger] drop message from ${senderId} (dmPolicy=${account.dmPolicy})`);
@@ -217,4 +219,103 @@ export function describeSendError(r: { error?: string; code?: number | null; sub
   if (r.code === 613 || r.code === 4) return `rate limited by Meta (${r.error})`;
   if (r.code === 551) return `recipient unavailable or blocked the Page (${r.error})`;
   return r.error ?? "unknown error";
+}
+
+/** Khach vua nhan tin gan nhat theo Trang: tool fanpage_handover dung khi agent khong truyen customerId. */
+const lastCustomer = new Map<string, { id: string; platform: MessengerPlatform }>();
+export function lastCustomerOf(pageId: string): { id: string; platform: MessengerPlatform } | undefined {
+  return lastCustomer.get(pageId);
+}
+
+export interface CommentEvent {
+  pageId: string;
+  senderId: string | null;
+  mid: string | null;
+  text: string | null;
+  payload: { comment_id?: string; post_id?: string; parent_id?: string; from?: { id?: string; name?: string }; permalink?: string | null } | null;
+}
+
+/**
+ * Binh luan moi tren bai cua Trang (Connect chi chuyen khi goi co tu dong tra loi binh luan).
+ * Moi nguoi binh luan mot phien rieng (peer `cmt:<id>`), tach khoi phien Messenger cua cung nguoi.
+ * Cau tra loi dang cong khai duoi binh luan; neu Trang bat "nhan rieng", bot nhan rieng noi dung
+ * va chi de lai mot dong cong khai lich su.
+ */
+export async function dispatchCommentEvent(ctx: MessengerDispatchContext, ev: CommentEvent): Promise<void> {
+  const { account, cfg, channelRuntime, log } = ctx;
+  const relay = ctx.relay;
+  const commentId = ev.payload?.comment_id || ev.mid || "";
+  const fromId = ev.payload?.from?.id || ev.senderId || "";
+  const text = (ev.text || "").trim();
+  if (!relay || !commentId || !fromId || !text) return;
+  if (fromId === account.pageId) return; // binh luan cua chinh Trang
+  if (!rememberMid(`${account.pageId}:${commentId}`)) return;
+  if (!isSenderAllowed(account, fromId)) return;
+
+  const settings = await pageSettings(relay, account.pageId).catch(() => ({ commentReply: true, privateReply: false }));
+  if (!settings.commentReply) return;
+  const name = ev.payload?.from?.name || fromId;
+  const peerId = `cmt:${fromId}`;
+  const body = [
+    `[Bình luận công khai trên bài viết của Trang${ev.payload?.permalink ? ` (${ev.payload.permalink})` : ""}]`,
+    `${name}: ${text}`,
+    "",
+    settings.privateReply
+      ? "Trả lời này sẽ được gửi riêng qua Messenger cho người bình luận. Trả lời đầy đủ như đang nhắn tin riêng."
+      : "Trả lời này sẽ hiện CÔNG KHAI dưới bình luận. Viết ngắn gọn, lịch sự; không đưa số điện thoại, địa chỉ hay giá riêng của khách; nếu cần tư vấn chi tiết thì mời khách nhắn tin cho Trang.",
+  ].join("\n");
+
+  const route = channelRuntime.routing.resolveAgentRoute({ cfg, channel: CHANNEL_ID, accountId: account.accountId, peer: { kind: "direct", id: peerId } });
+  const cfgSession = (cfg as { session?: { store?: unknown } }).session;
+  const storePath = channelRuntime.session.resolveStorePath(cfgSession?.store, { agentId: route.agentId });
+  const ctxPayload = channelRuntime.inbound.buildContext({
+    channel: CHANNEL_ID,
+    accountId: account.accountId,
+    messageId: commentId,
+    timestamp: Date.now(),
+    from: `${CHANNEL_ID}:${peerId}`,
+    sender: { id: peerId, name },
+    conversation: { kind: "direct", id: peerId, label: `${name} (bình luận)` },
+    route: { agentId: route.agentId, accountId: route.accountId ?? account.accountId, routeSessionKey: route.sessionKey },
+    reply: { to: `${CHANNEL_ID}:${peerId}`, originatingTo: `${CHANNEL_ID}:${peerId}` },
+    message: { body, bodyForAgent: body, rawBody: text, commandBody: text },
+  });
+
+  let answered = false;
+  const deliver = async (payload: OutboundReplyPayload): Promise<unknown> => {
+    if (isSystemErrorReply(payload.text)) {
+      log?.error?.(`[fb-messenger] model/provider error on comment ${commentId} (not posted): ${String(payload.text).slice(0, 200)}`);
+      return { ok: false, error: "system error suppressed" };
+    }
+    const reply = payload.text?.trim();
+    if (!reply) return { ok: true };
+    if (settings.privateReply && !answered) {
+      const priv = await replyComment(relay, account.pageId, commentId, reply, true);
+      if (!priv.ok) log?.warn?.(`[fb-messenger] private reply to comment ${commentId} failed: ${priv.error}`);
+      const pub = await replyComment(relay, account.pageId, commentId, priv.ok ? "Dạ shop đã nhắn riêng cho bạn, bạn xem tin nhắn giúp shop nhé." : reply);
+      answered = true;
+      return pub;
+    }
+    const r = await replyComment(relay, account.pageId, commentId, reply);
+    if (!r.ok) log?.error?.(`[fb-messenger] comment reply failed: ${r.error}${r.upgradeUrl ? ` (upgrade: ${r.upgradeUrl})` : ""}`);
+    answered = true;
+    return r;
+  };
+
+  try {
+    await channelRuntime.inbound.dispatchReply({
+      channel: CHANNEL_ID,
+      accountId: account.accountId,
+      cfg,
+      agentId: route.agentId,
+      routeSessionKey: route.sessionKey,
+      storePath,
+      ctxPayload,
+      recordInboundSession: channelRuntime.session.recordInboundSession,
+      dispatchReplyWithBufferedBlockDispatcher: channelRuntime.reply.dispatchReplyWithBufferedBlockDispatcher,
+      delivery: { deliver },
+    });
+  } catch (err) {
+    log?.error?.(`[fb-messenger] comment dispatch failed for ${commentId}: ${String(err)}`);
+  }
 }

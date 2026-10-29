@@ -1,6 +1,6 @@
 {
   "name": "openclaw-fb-messenger",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Facebook Messenger + Instagram channel plugin for OpenClaw: relay via MonkeyTech Connect (no token on the bot) or direct webhook + Graph API; AI handled by the OpenClaw agent.",
   "type": "module",
@@ -90,6 +90,7 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@sinclair/typebox": "^0.34.52",
     "@types/node": "^22.0.0",
     "openclaw": ">=2026.6.10",
     "tsup": "^8.3.0",

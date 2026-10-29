@@ -350,6 +350,41 @@ function hasRegisteredAccounts() {
   return byPageId.size > 0;
 }
 
+// src/connect-api.ts
+async function connectCall(relay, path, init = {}, fetchImpl = fetch) {
+  try {
+    const res = await fetchImpl(`${relay.url.replace(/\/+$/, "")}${path}`, {
+      method: init.method ?? (init.body === void 0 ? "GET" : "POST"),
+      headers: { authorization: `Bearer ${relay.botKey}`, "content-type": "application/json" },
+      body: init.body === void 0 ? void 0 : JSON.stringify(init.body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok !== false) return { ok: true, status: res.status, data };
+    const err = data.error;
+    return {
+      ok: false,
+      status: res.status,
+      data,
+      error: typeof err === "string" ? err : err?.message || `Connect HTTP ${res.status}`,
+      upgradeUrl: res.status === 402 ? String(data.billingUrl || "") : void 0
+    };
+  } catch (e) {
+    return { ok: false, status: 0, data: {}, error: String(e) };
+  }
+}
+var page = (id) => `/api/pages/${encodeURIComponent(id)}`;
+var replyComment = (r, pageId, commentId, message, isPrivate = false, f) => connectCall(r, `${page(pageId)}/comments/${encodeURIComponent(commentId)}/replies`, { body: { message, private: isPrivate } }, f);
+var settingsCache = /* @__PURE__ */ new Map();
+async function pageSettings(r, pageId, f) {
+  const hit = settingsCache.get(pageId);
+  if (hit && Date.now() - hit.at < 6e4) return hit.value;
+  const res = await connectCall(r, `${page(pageId)}/settings`, {}, f);
+  const s = res.data.settings ?? {};
+  const value = { commentReply: s.commentReply !== false, privateReply: s.privateReply === true };
+  settingsCache.set(pageId, { at: Date.now(), value });
+  return value;
+}
+
 // src/inbound.ts
 var SEEN_LIMIT = 5e3;
 var seenMids = /* @__PURE__ */ new Set();
@@ -412,6 +447,7 @@ async function dispatchMessengerEvent(ctx, event, options = {}) {
   }
   const text = extractBody(event);
   if (!text) return;
+  lastCustomer.set(account.pageId, { id: senderId, platform });
   if (!isSenderAllowed(account, senderId)) {
     log?.info?.(`[fb-messenger] drop message from ${senderId} (dmPolicy=${account.dmPolicy})`);
     return;
@@ -527,6 +563,79 @@ function describeSendError(r) {
   if (r.code === 551) return `recipient unavailable or blocked the Page (${r.error})`;
   return r.error ?? "unknown error";
 }
+var lastCustomer = /* @__PURE__ */ new Map();
+async function dispatchCommentEvent(ctx, ev) {
+  const { account, cfg, channelRuntime, log } = ctx;
+  const relay = ctx.relay;
+  const commentId = ev.payload?.comment_id || ev.mid || "";
+  const fromId = ev.payload?.from?.id || ev.senderId || "";
+  const text = (ev.text || "").trim();
+  if (!relay || !commentId || !fromId || !text) return;
+  if (fromId === account.pageId) return;
+  if (!rememberMid(`${account.pageId}:${commentId}`)) return;
+  if (!isSenderAllowed(account, fromId)) return;
+  const settings = await pageSettings(relay, account.pageId).catch(() => ({ commentReply: true, privateReply: false }));
+  if (!settings.commentReply) return;
+  const name = ev.payload?.from?.name || fromId;
+  const peerId = `cmt:${fromId}`;
+  const body = [
+    `[B\xECnh lu\u1EADn c\xF4ng khai tr\xEAn b\xE0i vi\u1EBFt c\u1EE7a Trang${ev.payload?.permalink ? ` (${ev.payload.permalink})` : ""}]`,
+    `${name}: ${text}`,
+    "",
+    settings.privateReply ? "Tr\u1EA3 l\u1EDDi n\xE0y s\u1EBD \u0111\u01B0\u1EE3c g\u1EEDi ri\xEAng qua Messenger cho ng\u01B0\u1EDDi b\xECnh lu\u1EADn. Tr\u1EA3 l\u1EDDi \u0111\u1EA7y \u0111\u1EE7 nh\u01B0 \u0111ang nh\u1EAFn tin ri\xEAng." : "Tr\u1EA3 l\u1EDDi n\xE0y s\u1EBD hi\u1EC7n C\xD4NG KHAI d\u01B0\u1EDBi b\xECnh lu\u1EADn. Vi\u1EBFt ng\u1EAFn g\u1ECDn, l\u1ECBch s\u1EF1; kh\xF4ng \u0111\u01B0a s\u1ED1 \u0111i\u1EC7n tho\u1EA1i, \u0111\u1ECBa ch\u1EC9 hay gi\xE1 ri\xEAng c\u1EE7a kh\xE1ch; n\u1EBFu c\u1EA7n t\u01B0 v\u1EA5n chi ti\u1EBFt th\xEC m\u1EDDi kh\xE1ch nh\u1EAFn tin cho Trang."
+  ].join("\n");
+  const route = channelRuntime.routing.resolveAgentRoute({ cfg, channel: CHANNEL_ID, accountId: account.accountId, peer: { kind: "direct", id: peerId } });
+  const cfgSession = cfg.session;
+  const storePath = channelRuntime.session.resolveStorePath(cfgSession?.store, { agentId: route.agentId });
+  const ctxPayload = channelRuntime.inbound.buildContext({
+    channel: CHANNEL_ID,
+    accountId: account.accountId,
+    messageId: commentId,
+    timestamp: Date.now(),
+    from: `${CHANNEL_ID}:${peerId}`,
+    sender: { id: peerId, name },
+    conversation: { kind: "direct", id: peerId, label: `${name} (b\xECnh lu\u1EADn)` },
+    route: { agentId: route.agentId, accountId: route.accountId ?? account.accountId, routeSessionKey: route.sessionKey },
+    reply: { to: `${CHANNEL_ID}:${peerId}`, originatingTo: `${CHANNEL_ID}:${peerId}` },
+    message: { body, bodyForAgent: body, rawBody: text, commandBody: text }
+  });
+  let answered = false;
+  const deliver = async (payload) => {
+    if (isSystemErrorReply(payload.text)) {
+      log?.error?.(`[fb-messenger] model/provider error on comment ${commentId} (not posted): ${String(payload.text).slice(0, 200)}`);
+      return { ok: false, error: "system error suppressed" };
+    }
+    const reply = payload.text?.trim();
+    if (!reply) return { ok: true };
+    if (settings.privateReply && !answered) {
+      const priv = await replyComment(relay, account.pageId, commentId, reply, true);
+      if (!priv.ok) log?.warn?.(`[fb-messenger] private reply to comment ${commentId} failed: ${priv.error}`);
+      const pub = await replyComment(relay, account.pageId, commentId, priv.ok ? "D\u1EA1 shop \u0111\xE3 nh\u1EAFn ri\xEAng cho b\u1EA1n, b\u1EA1n xem tin nh\u1EAFn gi\xFAp shop nh\xE9." : reply);
+      answered = true;
+      return pub;
+    }
+    const r = await replyComment(relay, account.pageId, commentId, reply);
+    if (!r.ok) log?.error?.(`[fb-messenger] comment reply failed: ${r.error}${r.upgradeUrl ? ` (upgrade: ${r.upgradeUrl})` : ""}`);
+    answered = true;
+    return r;
+  };
+  try {
+    await channelRuntime.inbound.dispatchReply({
+      channel: CHANNEL_ID,
+      accountId: account.accountId,
+      cfg,
+      agentId: route.agentId,
+      routeSessionKey: route.sessionKey,
+      storePath,
+      ctxPayload,
+      recordInboundSession: channelRuntime.session.recordInboundSession,
+      dispatchReplyWithBufferedBlockDispatcher: channelRuntime.reply.dispatchReplyWithBufferedBlockDispatcher,
+      delivery: { deliver }
+    });
+  } catch (err) {
+    log?.error?.(`[fb-messenger] comment dispatch failed for ${commentId}: ${String(err)}`);
+  }
+}
 
 // src/relay.ts
 var loop = null;
@@ -622,6 +731,14 @@ async function handleRelayEvent(ev, opts) {
       const event = ev.payload;
       if (!event || typeof event !== "object" || !event.sender) return;
       await dispatchMessengerEvent(ctx, event, { platform: ev.object === "instagram" ? "instagram" : "messenger" });
+      return;
+    }
+    case "comment":
+      await dispatchCommentEvent(ctx, { pageId: ev.pageId, senderId: ev.senderId, mid: ev.mid, text: ev.text, payload: ev.payload ?? null });
+      return;
+    case "quota": {
+      const p = ev.payload ?? {};
+      ctx.log?.warn?.(`[fb-messenger] page ${ev.pageId}: Free plan used ${p.used}/${p.quota} conversations this month${p.level === 100 ? " - new conversations go to the Connect inbox only; upgrade at Connect /billing" : ""}`);
       return;
     }
     case "disconnected":
@@ -801,7 +918,7 @@ var messengerGateway = {
       }
       const relayUrl = (relay.url || account.relayUrl).replace(/\/+$/, "");
       const sender = createRelaySender({ url: relayUrl, botKey: relay.botKey, pageId: account.pageId });
-      const dispose2 = registerDispatchContext({ account, cfg: ctx.cfg, channelRuntime, sender, log: ctx.log, setStatus: ctx.setStatus });
+      const dispose2 = registerDispatchContext({ account, cfg: ctx.cfg, channelRuntime, sender, log: ctx.log, setStatus: ctx.setStatus, relay: { url: relayUrl, botKey: relay.botKey } });
       const release = acquireRelayLoop({ url: relayUrl, botKey: relay.botKey, log: ctx.log });
       ctx.setStatus?.({ accountId: account.accountId, name: account.name, enabled: true, configured: true, transport: "relay" });
       ctx.log?.info?.(`[fb-messenger] account ${account.accountId} listening via relay ${relayUrl} (page ${account.pageId}${account.instagramId ? `, instagram ${account.instagramId}` : ""})`);

@@ -5,7 +5,7 @@
  * bot keo ve. Khuon giong GET /api/events cua MonkeyPay.
  */
 import { loadRelayCursor, saveRelayCursor } from "./credentials.js";
-import { dispatchMessengerEvent } from "./inbound.js";
+import { dispatchCommentEvent, dispatchMessengerEvent, type CommentEvent } from "./inbound.js";
 import { getDispatchContextForPage, hasRegisteredAccounts } from "./registry.js";
 import type { MessengerMessagingEvent } from "./types.js";
 
@@ -146,6 +146,15 @@ async function handleRelayEvent(ev: RelayEvent, opts: RelayLoopOptions): Promise
       const event = ev.payload as MessengerMessagingEvent;
       if (!event || typeof event !== "object" || !event.sender) return;
       await dispatchMessengerEvent(ctx, event, { platform: ev.object === "instagram" ? "instagram" : "messenger" });
+      return;
+    }
+    case "comment":
+      await dispatchCommentEvent(ctx, { pageId: ev.pageId, senderId: ev.senderId, mid: ev.mid, text: ev.text, payload: (ev.payload ?? null) as CommentEvent["payload"] });
+      return;
+    case "quota": {
+      // Connect bao goi Free da dung 80% / 100% han muc thang: ghi log cho nguoi van hanh thay.
+      const p = (ev.payload ?? {}) as { level?: number; used?: number; quota?: number };
+      ctx.log?.warn?.(`[fb-messenger] page ${ev.pageId}: Free plan used ${p.used}/${p.quota} conversations this month${p.level === 100 ? " - new conversations go to the Connect inbox only; upgrade at Connect /billing" : ""}`);
       return;
     }
     case "disconnected":

@@ -2,6 +2,12 @@
 
 All notable changes to **fb-messenger** are documented here.
 
+## [0.3.0] - 2026-10-30
+### Added
+- **Comment auto-replies** (relay transport, needs MonkeyTech Connect 0.5): new comments on the Page's posts reach the agent as a public-comment turn (session `cmt:<user>`), and the reply is posted under the comment. When the Page turns on "message the commenter privately", the answer goes to Messenger and a short "we messaged you" note is left under the comment. The Page's own comments are never answered.
+- **Agent tools**: `fanpage_post` (text, link or image post), `fanpage_reel` (Reels from a public mp4 URL) and `fanpage_handover` (hand the customer to a human: the bot stays quiet with them for a few hours and the conversation gets the `can-nguoi` label in the Connect inbox). On the Free plan the tools return `needUpgrade` with the billing link instead of throwing.
+- `quota` events from Connect (Free plan at 80% / 100% of the monthly conversations) are logged for the operator.
+
 ## [0.2.1] - 2026-10-26
 ### Added
 - **Ack reaction** (`ackReaction`, defaults to OpenClaw's `messages.ackReaction`; the Zalo code `/-heart` maps to the heart emoji): every inbound message gets a reaction right away, like the Zalo channel. Messenger accepts any emoji, Instagram always sends "love". Works on both transports (Connect proxies `sender_action: react`).

@@ -3,7 +3,7 @@
   "name": "Facebook Messenger",
   "description": "OpenClaw Facebook Messenger + Instagram channel plugin: relay via MonkeyTech Connect (no token on the bot) or direct webhook + Graph API.",
   "icon": "https://cdn.jsdelivr.net/gh/tuanminhhole/openclaw-fb-messenger@main/logo.svg",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "activation": {
     "onStartup": false
   },
@@ -224,5 +224,12 @@
         }
       }
     }
+  },
+  "contracts": {
+    "tools": [
+      "fanpage_post",
+      "fanpage_reel",
+      "fanpage_handover"
+    ]
   }
 }
