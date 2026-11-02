@@ -6,3 +6,8 @@ docs_dev/
 .DS_Store
 
 .claude/
+
+# Bí mật (chuẩn MonkeyTech, BI-MAT.md)
+secrets/
+*.pem
+*.key
