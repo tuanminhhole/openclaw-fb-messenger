@@ -1,6 +1,6 @@
 # CLAUDE.md - openclaw-fb-messenger
 
-Bối cảnh gốc: đọc `~/SecondBrain/CONTEXT.md`. Bộ chuẩn dự án: `~/Project/chuan/README.md` (cấu trúc, bí mật, tên biến ở `BI-MAT.md`).
+Bối cảnh gốc: đọc `~/SecondBrain/CONTEXT.md`. Bộ chuẩn dự án: `~/Project/chuan/master/README.md` (cấu trúc, bí mật, tên biến ở `BI-MAT.md`).
 
 - Repo làm gì: plugin OpenClaw kênh Facebook Messenger và Instagram (relay qua MonkeyTech Connect hoặc webhook trực tiếp).
 - Triển khai: plugin cài vào OpenClaw của khách, không có thư mục riêng trên vps_mkt (CAU-TRUC.md: chưa kiểm).
