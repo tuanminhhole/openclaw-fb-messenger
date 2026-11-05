@@ -2,6 +2,11 @@
 
 All notable changes to **fb-messenger** are documented here.
 
+## [0.3.1] - 2026-11-05
+### Security
+- **`fanpage_post` and `fanpage_reel` are now owner-only, enforced in code.** In 0.3.0 the tools were offered to every turn and only the description asked the agent to post "when the Page owner asks", so a customer on Messenger, Zalo or in a group could talk the bot into posting on the Page. The tools are now registered through a factory and only reach the agent when the host-provided sender is the bot owner: the sender id is listed in `commands.ownerAllowFrom` (`<channel>:<id>` or `<id>`), or the host marks the sender as owner while the owner list is explicit (a `"*"` entry no longer counts), or the turn is the bot's own cron run with no sender. `execute` checks again before calling Connect. `fanpage_handover` stays available to everyone.
+- Bots whose owner list is only `["*"]` lose the post tools in chat until the owner id is added to `commands.ownerAllowFrom`; scheduled posts from the bot's own cron keep working.
+
 ## [0.3.0] - 2026-10-30
 ### Added
 - **Comment auto-replies** (relay transport, needs MonkeyTech Connect 0.5): new comments on the Page's posts reach the agent as a public-comment turn (session `cmt:<user>`), and the reply is posted under the comment. When the Page turns on "message the commenter privately", the answer goes to Messenger and a short "we messaged you" note is left under the comment. The Page's own comments are never answered.

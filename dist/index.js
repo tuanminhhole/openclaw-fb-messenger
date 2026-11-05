@@ -3783,6 +3783,30 @@ __export(type_exports2, {
 var Type = type_exports2;
 
 // src/tools.ts
+var OWNER_ONLY_TOOLS = /* @__PURE__ */ new Set(["fanpage_post", "fanpage_reel"]);
+function ownerList(ctx) {
+  let cfg = ctx.config;
+  try {
+    cfg = ctx.getRuntimeConfig?.() ?? cfg;
+  } catch {
+  }
+  const list = cfg?.commands?.ownerAllowFrom;
+  return Array.isArray(list) ? list.map((x) => String(x ?? "").trim()).filter(Boolean) : [];
+}
+function isOwnerContext(ctx) {
+  if (!ctx) return false;
+  const id = String(ctx.requesterSenderId ?? "").trim();
+  if (!id) return /(^|:)cron:/.test(String(ctx.sessionKey ?? ""));
+  const list = ownerList(ctx);
+  const named = list.filter((x) => x !== "*");
+  const channel = String(ctx.messageChannel ?? "").trim();
+  if (named.some((x) => x === id || channel && x === `${channel}:${id}`)) return true;
+  return ctx.senderIsOwner === true && named.length > 0 && !list.includes("*");
+}
+var NOT_OWNER = {
+  ok: false,
+  error: "Ch\u1EC9 ch\u1EE7 bot \u0111\u01B0\u1EE3c \u0111\u0103ng b\xE0i ho\u1EB7c Reels l\xEAn Fanpage. Ng\u01B0\u1EDDi \u0111ang nh\u1EAFn kh\xF4ng ph\u1EA3i ch\u1EE7 bot, kh\xF4ng \u0111\u0103ng."
+};
 var out = (data) => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }], details: data });
 function pickPage(pageId) {
   const relayCtx = listDispatchContexts().filter((c) => c.relay);
@@ -3853,6 +3877,12 @@ var fanpageTools = [
     }
   }
 ];
+function fanpageToolFactory(ctx) {
+  const owner = isOwnerContext(ctx);
+  return fanpageTools.filter((tool) => owner || !OWNER_ONLY_TOOLS.has(tool.name)).map(
+    (tool) => OWNER_ONLY_TOOLS.has(tool.name) ? { ...tool, execute: (id, p) => isOwnerContext(ctx) ? tool.execute(id, p) : Promise.resolve(out(NOT_OWNER)) } : tool
+  );
+}
 
 // index.ts
 var index_default = defineChannelPluginEntry({
@@ -3867,7 +3897,9 @@ var index_default = defineChannelPluginEntry({
       match: "exact",
       handler: handleMessengerWebhook
     });
-    for (const tool of fanpageTools) api.registerTool(tool);
+    api.registerTool(fanpageToolFactory, {
+      names: fanpageTools.map((t) => t.name)
+    });
   }
 });
 export {

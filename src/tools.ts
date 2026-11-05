@@ -10,6 +10,50 @@ import { handover, publishPost, publishReel, type ConnectResult } from "./connec
 import { lastCustomerOf } from "./inbound.js";
 import { listDispatchContexts, type MessengerDispatchContext } from "./registry.js";
 
+/**
+ * Ai duoc dung tool dang bai/Reels. Tool chay theo tin nhan cua BAT KY ai (khach Fanpage, khach Zalo,
+ * thanh vien nhom), nen KHONG du khi chi dan "chu Trang" trong description: khach nhan kheo la bot dang bai.
+ * Chi tin tin hieu do host cap (SDK: "runtime-provided, not tool args"), khong bao gio tin tham so cua model:
+ *  - requesterSenderId nam dich danh trong commands.ownerAllowFrom (dang "<kenh>:<id>" hoac "<id>");
+ *  - senderIsOwner === true NHUNG chi khi ownerAllowFrom la danh sach dich danh, khong co "*"
+ *    (OpenClaw cu coi "*" la ai cung la chu; setup tung ghi ["*"] cho bot co lich chay);
+ *  - luot cron cua chinh bot (khong co nguoi gui, sessionKey co "cron:"), nhu zalo-mod isOwnerScheduledRun.
+ * Chan 2 lop: factory khong dua tool cho nguoi ngoai (tool bien khoi prompt), execute kiem lai lan nua.
+ */
+export type FanpageToolContext = {
+  config?: { commands?: { ownerAllowFrom?: Array<string | number> } };
+  getRuntimeConfig?: () => { commands?: { ownerAllowFrom?: Array<string | number> } } | undefined;
+  requesterSenderId?: string;
+  senderIsOwner?: boolean;
+  messageChannel?: string;
+  sessionKey?: string;
+};
+
+export const OWNER_ONLY_TOOLS = new Set(["fanpage_post", "fanpage_reel"]);
+
+function ownerList(ctx: FanpageToolContext): string[] {
+  let cfg = ctx.config;
+  try { cfg = ctx.getRuntimeConfig?.() ?? cfg; } catch { /* giu config snapshot */ }
+  const list = cfg?.commands?.ownerAllowFrom;
+  return Array.isArray(list) ? list.map((x) => String(x ?? "").trim()).filter(Boolean) : [];
+}
+
+export function isOwnerContext(ctx: FanpageToolContext | undefined): boolean {
+  if (!ctx) return false;
+  const id = String(ctx.requesterSenderId ?? "").trim();
+  if (!id) return /(^|:)cron:/.test(String(ctx.sessionKey ?? ""));
+  const list = ownerList(ctx);
+  const named = list.filter((x) => x !== "*");
+  const channel = String(ctx.messageChannel ?? "").trim();
+  if (named.some((x) => x === id || (channel && x === `${channel}:${id}`))) return true;
+  return ctx.senderIsOwner === true && named.length > 0 && !list.includes("*");
+}
+
+const NOT_OWNER = {
+  ok: false,
+  error: "Chỉ chủ bot được đăng bài hoặc Reels lên Fanpage. Người đang nhắn không phải chủ bot, không đăng.",
+};
+
 type ToolResult = { content: Array<{ type: "text"; text: string }>; details?: unknown };
 const out = (data: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }], details: data });
 
@@ -30,7 +74,13 @@ function explain(r: ConnectResult, okData: Record<string, unknown>): ToolResult 
   return out({ ok: false, error: r.error, status: r.status });
 }
 
-export const fanpageTools = [
+export const fanpageTools: Array<{
+  name: string;
+  label: string;
+  description: string;
+  parameters: unknown;
+  execute(id: string, p: never): Promise<ToolResult>;
+}> = [
   {
     name: "fanpage_post",
     label: "Đăng bài Fanpage",
@@ -91,3 +141,18 @@ export const fanpageTools = [
     },
   },
 ];
+
+/**
+ * Factory dang ky voi host: moi luot host goi kem ngu canh nguoi gui. Nguoi ngoai chi thay fanpage_handover.
+ * Tool chu bot duoc boc execute de kiem lai bang chinh ngu canh luot do.
+ */
+export function fanpageToolFactory(ctx: FanpageToolContext) {
+  const owner = isOwnerContext(ctx);
+  return fanpageTools
+    .filter((tool) => owner || !OWNER_ONLY_TOOLS.has(tool.name))
+    .map((tool) =>
+      OWNER_ONLY_TOOLS.has(tool.name)
+        ? { ...tool, execute: (id: string, p: never) => (isOwnerContext(ctx) ? tool.execute(id, p) : Promise.resolve(out(NOT_OWNER))) }
+        : tool,
+    );
+}
